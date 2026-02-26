@@ -1,0 +1,67 @@
+{
+  "ManagementGroupName": "Contoso-Gov",
+  "SubscriptionId": "00000000-0000-0000-0000-000000000001",
+  "ResourceGroupName": "rg-update-manager",
+  "TenantId": "00000000-0000-0000-0000-000000000002",
+  "AppId": "00000000-0000-0000-0000-000000000003",
+  "AppSecret": "your-client-secret-here",
+  "Location": "usgovvirginia",
+  "MaintenanceSchedules": [
+    {
+      "Name": "Patch-Windows-Weekly-Saturday",
+      "OsType": "Windows",
+      "Classifications": ["Critical", "Security", "UpdateRollup"],
+      "KbInclude": [],
+      "KbExclude": [],
+      "ExcludeKbRequiringReboot": false,
+      "RebootSetting": "IfRequired",
+      "RecurEvery": "Week Saturday",
+      "StartDateTime": "2026-03-07 02:00",
+      "Duration": "03:00",
+      "Timezone": "Eastern Standard Time",
+      "PreTask": "",
+      "PostTask": "",
+      "DynamicScopes": [
+        {
+          "Subscriptions": [
+            "00000000-0000-0000-0000-000000000010",
+            "00000000-0000-0000-0000-000000000011"
+          ],
+          "ResourceGroups": [],
+          "Locations": ["usgovvirginia"],
+          "OsTypes": ["Windows"],
+          "Tags": {
+            "Environment": ["Production"]
+          },
+          "TagOperator": "Any"
+        }
+      ]
+    },
+    {
+      "Name": "Patch-Linux-Weekly-Sunday",
+      "OsType": "Linux",
+      "Classifications": ["Critical", "Security", "Other"],
+      "PackageInclude": [],
+      "PackageExclude": [],
+      "RebootSetting": "IfRequired",
+      "RecurEvery": "Week Sunday",
+      "StartDateTime": "2026-03-08 03:00",
+      "Duration": "02:00",
+      "Timezone": "Eastern Standard Time",
+      "DynamicScopes": [
+        {
+          "Subscriptions": [
+            "00000000-0000-0000-0000-000000000010",
+            "00000000-0000-0000-0000-000000000011"
+          ],
+          "Locations": ["usgovvirginia"],
+          "OsTypes": ["Linux"],
+          "Tags": {
+            "Environment": ["Production"]
+          },
+          "TagOperator": "Any"
+        }
+      ]
+    }
+  ]
+}

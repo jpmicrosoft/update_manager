@@ -1,0 +1,124 @@
+{
+  "ManagementGroupName": "Contoso-Gov",
+  "SubscriptionId": "00000000-0000-0000-0000-000000000001",
+  "ResourceGroupName": "rg-update-manager",
+  "TenantId": "00000000-0000-0000-0000-000000000002",
+  "AppId": "00000000-0000-0000-0000-000000000003",
+  "AppSecret": "your-client-secret-here",
+  "Location": "usgovvirginia",
+  "MaintenanceSchedules": [
+    {
+      "_comment": "Production Windows servers — critical/security only, weekly Saturday 2AM ET",
+      "Name": "Patch-Win-Prod-Weekly",
+      "OsType": "Windows",
+      "Classifications": ["Critical", "Security"],
+      "KbInclude": [],
+      "KbExclude": ["5034439"],
+      "ExcludeKbRequiringReboot": false,
+      "RebootSetting": "IfRequired",
+      "RecurEvery": "Week Saturday",
+      "StartDateTime": "2026-03-07 02:00",
+      "Duration": "03:00",
+      "Timezone": "Eastern Standard Time",
+      "PreTask": "",
+      "PostTask": "",
+      "DynamicScopes": [
+        {
+          "Subscriptions": [
+            "00000000-0000-0000-0000-000000000010",
+            "00000000-0000-0000-0000-000000000011"
+          ],
+          "ResourceGroups": ["RG-Prod-East", "RG-Prod-West"],
+          "Locations": ["usgovvirginia", "usgovarizona"],
+          "OsTypes": ["Windows"],
+          "Tags": {
+            "Environment": ["Production"],
+            "PatchGroup": ["GroupA"]
+          },
+          "TagOperator": "All"
+        }
+      ]
+    },
+    {
+      "_comment": "Dev/Test Windows — all classifications, weekly Sunday 1AM ET, never reboot",
+      "Name": "Patch-Win-DevTest-Weekly",
+      "OsType": "Windows",
+      "Classifications": ["Critical", "Security", "UpdateRollup", "FeaturePack", "ServicePack", "Definition", "Tools", "Updates"],
+      "KbInclude": [],
+      "KbExclude": [],
+      "ExcludeKbRequiringReboot": false,
+      "RebootSetting": "NeverReboot",
+      "RecurEvery": "Week Sunday",
+      "StartDateTime": "2026-03-08 01:00",
+      "Duration": "04:00",
+      "Timezone": "Eastern Standard Time",
+      "DynamicScopes": [
+        {
+          "Subscriptions": [
+            "00000000-0000-0000-0000-000000000012"
+          ],
+          "OsTypes": ["Windows"],
+          "Tags": {
+            "Environment": ["Development", "Test", "QA"]
+          },
+          "TagOperator": "Any"
+        }
+      ]
+    },
+    {
+      "_comment": "Production Linux — critical/security, monthly 3rd Saturday 3AM UTC",
+      "Name": "Patch-Linux-Prod-Monthly",
+      "OsType": "Linux",
+      "Classifications": ["Critical", "Security"],
+      "PackageInclude": ["kernel", "openssl", "glibc"],
+      "PackageExclude": [],
+      "RebootSetting": "IfRequired",
+      "RecurEvery": "Month Third Saturday",
+      "StartDateTime": "2026-03-21 03:00",
+      "Duration": "02:00",
+      "Timezone": "UTC",
+      "PreTask": "https://mystorageaccount.blob.core.usgovcloudapi.net/scripts/pre-patch-healthcheck.sh",
+      "PostTask": "https://mystorageaccount.blob.core.usgovcloudapi.net/scripts/post-patch-verify.sh",
+      "DynamicScopes": [
+        {
+          "Subscriptions": [
+            "00000000-0000-0000-0000-000000000010",
+            "00000000-0000-0000-0000-000000000011"
+          ],
+          "Locations": ["usgovvirginia"],
+          "OsTypes": ["Linux"],
+          "Tags": {
+            "Environment": ["Production"],
+            "OS": ["Linux"]
+          },
+          "TagOperator": "All"
+        }
+      ]
+    },
+    {
+      "_comment": "Dev/Test Linux — all updates, weekly Sunday 4AM UTC",
+      "Name": "Patch-Linux-DevTest-Weekly",
+      "OsType": "Linux",
+      "Classifications": ["Critical", "Security", "Other"],
+      "PackageInclude": [],
+      "PackageExclude": ["docker-ce"],
+      "RebootSetting": "IfRequired",
+      "RecurEvery": "Week Sunday",
+      "StartDateTime": "2026-03-08 04:00",
+      "Duration": "02:00",
+      "Timezone": "UTC",
+      "DynamicScopes": [
+        {
+          "Subscriptions": [
+            "00000000-0000-0000-0000-000000000012"
+          ],
+          "OsTypes": ["Linux"],
+          "Tags": {
+            "Environment": ["Development", "Test"]
+          },
+          "TagOperator": "Any"
+        }
+      ]
+    }
+  ]
+}
