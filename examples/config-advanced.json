@@ -10,6 +10,7 @@
     {
       "_comment": "Production Windows servers — critical/security only, weekly Saturday 2AM ET",
       "Name": "Patch-Win-Prod-Weekly",
+      "MaintenanceScope": "InGuestPatch",
       "OsType": "Windows",
       "Classifications": ["Critical", "Security"],
       "KbInclude": [],
@@ -42,6 +43,7 @@
     {
       "_comment": "Dev/Test Windows — all classifications, weekly Sunday 1AM ET, never reboot",
       "Name": "Patch-Win-DevTest-Weekly",
+      "MaintenanceScope": "InGuestPatch",
       "OsType": "Windows",
       "Classifications": ["Critical", "Security", "UpdateRollup", "FeaturePack", "ServicePack", "Definition", "Tools", "Updates"],
       "KbInclude": [],
@@ -68,6 +70,7 @@
     {
       "_comment": "Production Linux — critical/security, monthly 3rd Saturday 3AM UTC",
       "Name": "Patch-Linux-Prod-Monthly",
+      "MaintenanceScope": "InGuestPatch",
       "OsType": "Linux",
       "Classifications": ["Critical", "Security"],
       "PackageInclude": ["kernel", "openssl", "glibc"],
@@ -98,6 +101,7 @@
     {
       "_comment": "Dev/Test Linux — all updates, weekly Sunday 4AM UTC",
       "Name": "Patch-Linux-DevTest-Weekly",
+      "MaintenanceScope": "InGuestPatch",
       "OsType": "Linux",
       "Classifications": ["Critical", "Security", "Other"],
       "PackageInclude": [],

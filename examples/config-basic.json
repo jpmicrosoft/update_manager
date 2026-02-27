@@ -9,6 +9,7 @@
   "MaintenanceSchedules": [
     {
       "Name": "Patch-Windows-Weekly-Saturday",
+      "MaintenanceScope": "InGuestPatch",
       "OsType": "Windows",
       "Classifications": ["Critical", "Security", "UpdateRollup"],
       "KbInclude": [],
@@ -39,6 +40,7 @@
     },
     {
       "Name": "Patch-Linux-Weekly-Sunday",
+      "MaintenanceScope": "InGuestPatch",
       "OsType": "Linux",
       "Classifications": ["Critical", "Security", "Other"],
       "PackageInclude": [],

@@ -356,38 +356,59 @@ function New-ScheduleWizard {
         # Step 1: Name
         $schedule.Name = Read-RequiredInput "Enter a name for this maintenance configuration"
 
-        # Step 2: OS Type
-        $osChoice = Show-Menu -Title "Target OS Type" -Options @("Windows", "Linux")
-        $schedule.OsType = @("Windows", "Linux")[$osChoice - 1]
-
-        # Step 3: Classifications
-        if ($schedule.OsType -eq "Windows") {
-            $winClassifications = @("Critical", "Security", "UpdateRollup", "FeaturePack", "ServicePack", "Definition", "Tools", "Updates")
-            $schedule.Classifications = Read-MultiSelect -Title "Update Classifications (Windows)" -Options $winClassifications
-        } else {
-            $linuxClassifications = @("Critical", "Security", "Other")
-            $schedule.Classifications = Read-MultiSelect -Title "Update Classifications (Linux)" -Options $linuxClassifications
-        }
-
-        # Step 4: KB / Package Filters
-        if ($schedule.OsType -eq "Windows") {
-            $schedule.KbInclude = Read-CommaSeparated "Enter KB numbers to INCLUDE (comma-separated, or press Enter to skip)"
-            $schedule.KbExclude = Read-CommaSeparated "Enter KB numbers to EXCLUDE (comma-separated, or press Enter to skip)"
-            $schedule.ExcludeKbRequiringReboot = Read-YesNo "Exclude KBs that require reboot?"
-        } else {
-            $schedule.PackageInclude = Read-CommaSeparated "Enter package name masks to INCLUDE (comma-separated, or press Enter to skip)"
-            $schedule.PackageExclude = Read-CommaSeparated "Enter package name masks to EXCLUDE (comma-separated, or press Enter to skip)"
-        }
-
-        # Step 5: Reboot Setting
-        $rebootChoice = Show-Menu -Title "Reboot Setting After Patching" -Options @(
-            "IfRequired (Recommended — reboot only when needed)",
-            "AlwaysReboot",
-            "NeverReboot"
+        # Step 2: Maintenance Scope
+        $scopeChoice = Show-Menu -Title "Maintenance Scope" -Options @(
+            "InGuestPatch (Recommended — OS patching for VMs via Azure Update Manager)",
+            "Host (Platform updates for dedicated hosts / isolated VMs)",
+            "OSImage (OS image updates for VM scale sets)",
+            "Extension (VM extension maintenance)",
+            "SQLDB (Azure SQL Database maintenance)",
+            "SQLManagedInstance (Azure SQL Managed Instance maintenance)"
         )
-        $schedule.RebootSetting = @("IfRequired", "AlwaysReboot", "NeverReboot")[$rebootChoice - 1]
+        $schedule.MaintenanceScope = @("InGuestPatch", "Host", "OSImage", "Extension", "SQLDB", "SQLManagedInstance")[$scopeChoice - 1]
 
-        # Step 6: Recurrence
+        # Steps 3-6 are only relevant for InGuestPatch scope
+        if ($schedule.MaintenanceScope -eq "InGuestPatch") {
+            # Step 3: OS Type
+            $osChoice = Show-Menu -Title "Target OS Type" -Options @("Windows", "Linux")
+            $schedule.OsType = @("Windows", "Linux")[$osChoice - 1]
+
+            # Step 4: Classifications
+            if ($schedule.OsType -eq "Windows") {
+                $winClassifications = @("Critical", "Security", "UpdateRollup", "FeaturePack", "ServicePack", "Definition", "Tools", "Updates")
+                $schedule.Classifications = Read-MultiSelect -Title "Update Classifications (Windows)" -Options $winClassifications
+            } else {
+                $linuxClassifications = @("Critical", "Security", "Other")
+                $schedule.Classifications = Read-MultiSelect -Title "Update Classifications (Linux)" -Options $linuxClassifications
+            }
+
+            # Step 5: KB / Package Filters
+            if ($schedule.OsType -eq "Windows") {
+                $schedule.KbInclude = Read-CommaSeparated "Enter KB numbers to INCLUDE (comma-separated, or press Enter to skip)"
+                $schedule.KbExclude = Read-CommaSeparated "Enter KB numbers to EXCLUDE (comma-separated, or press Enter to skip)"
+                $schedule.ExcludeKbRequiringReboot = Read-YesNo "Exclude KBs that require reboot?"
+            } else {
+                $schedule.PackageInclude = Read-CommaSeparated "Enter package name masks to INCLUDE (comma-separated, or press Enter to skip)"
+                $schedule.PackageExclude = Read-CommaSeparated "Enter package name masks to EXCLUDE (comma-separated, or press Enter to skip)"
+            }
+
+            # Step 6: Reboot Setting
+            $rebootChoice = Show-Menu -Title "Reboot Setting After Patching" -Options @(
+                "IfRequired (Recommended — reboot only when needed)",
+                "AlwaysReboot",
+                "NeverReboot"
+            )
+            $schedule.RebootSetting = @("IfRequired", "AlwaysReboot", "NeverReboot")[$rebootChoice - 1]
+        } else {
+            Write-Host ""
+            Write-Host "  Note: Scope '$($schedule.MaintenanceScope)' does not use OS patching options" -ForegroundColor DarkGray
+            Write-Host "  (classifications, KB/package filters, and reboot settings are skipped)." -ForegroundColor DarkGray
+            $schedule.OsType = "Windows"  # default; not used for non-InGuestPatch scopes
+            $schedule.Classifications = @()
+            $schedule.RebootSetting = "IfRequired"
+        }
+
+        # Step 7: Recurrence
         $recurChoice = Show-Menu -Title "Recurrence Pattern" -Options @("Daily", "Weekly", "Monthly")
         switch ($recurChoice) {
             1 { $schedule.RecurEvery = "Day" }
@@ -412,7 +433,7 @@ function New-ScheduleWizard {
         $schedule.Duration = Read-RequiredInput "Enter maintenance window duration (HH:MM, e.g., 03:00)"
         $schedule.Timezone = Read-RequiredInput "Enter timezone (e.g., Eastern Standard Time, UTC)"
 
-        # Step 7: Dynamic Scopes
+        # Step 8: Dynamic Scopes
         $schedule.DynamicScopes = @()
         if (Read-YesNo "Would you like to add dynamic scopes for this schedule?") {
             do {
@@ -458,7 +479,7 @@ function New-ScheduleWizard {
             } while (Read-YesNo "Add another dynamic scope?")
         }
 
-        # Step 8: Pre/Post Tasks
+        # Step 9: Pre/Post Tasks
         $schedule.PreTask = Read-OptionalInput "Enter a pre-patching task (script URI or press Enter to skip)"
         $schedule.PostTask = Read-OptionalInput "Enter a post-patching task (script URI or press Enter to skip)"
 
@@ -501,17 +522,18 @@ function Import-ConfigFile {
     $schedules = @()
     foreach ($s in $config.MaintenanceSchedules) {
         $schedule = @{
-            Name             = $s.Name
-            OsType           = $s.OsType
-            Classifications  = @($s.Classifications)
-            RebootSetting    = $s.RebootSetting
-            RecurEvery       = $s.RecurEvery
-            StartDateTime    = $s.StartDateTime
-            Duration         = $s.Duration
-            Timezone         = $s.Timezone
-            PreTask          = if ($s.PSObject.Properties['PreTask']) { $s.PreTask } else { "" }
-            PostTask         = if ($s.PSObject.Properties['PostTask']) { $s.PostTask } else { "" }
-            DynamicScopes    = @()
+            Name              = $s.Name
+            MaintenanceScope  = if ($s.PSObject.Properties['MaintenanceScope']) { $s.MaintenanceScope } else { "InGuestPatch" }
+            OsType            = $s.OsType
+            Classifications   = @($s.Classifications)
+            RebootSetting     = $s.RebootSetting
+            RecurEvery        = $s.RecurEvery
+            StartDateTime     = $s.StartDateTime
+            Duration          = $s.Duration
+            Timezone          = $s.Timezone
+            PreTask           = if ($s.PSObject.Properties['PreTask']) { $s.PreTask } else { "" }
+            PostTask          = if ($s.PSObject.Properties['PostTask']) { $s.PostTask } else { "" }
+            DynamicScopes     = @()
         }
 
         # OS-specific filters
@@ -778,39 +800,43 @@ function New-MaintenanceConfigurations {
         $params = @{
             ResourceGroupName        = $ResourceGroupName
             Name                     = $configName
-            MaintenanceScope         = "InGuestPatch"
+            MaintenanceScope         = $schedule.MaintenanceScope
             Location                 = $Location
             Timezone                 = $schedule.Timezone
             StartDateTime            = $schedule.StartDateTime
             Duration                 = $schedule.Duration
             RecurEvery               = $schedule.RecurEvery
-            InstallPatchRebootSetting = $schedule.RebootSetting
-            ExtensionProperty        = @{ inGuestPatchMode = "User" }
         }
 
-        # OS-specific classification and filter params
-        if ($schedule.OsType -eq "Windows") {
-            $params['WindowParameterClassificationToInclude'] = $schedule.Classifications
-            if ($schedule.KbInclude -and $schedule.KbInclude.Count -gt 0) {
-                $params['WindowParameterKbNumberToInclude'] = $schedule.KbInclude
-            }
-            if ($schedule.KbExclude -and $schedule.KbExclude.Count -gt 0) {
-                $params['WindowParameterKbNumberToExclude'] = $schedule.KbExclude
-            }
-            if ($schedule.ExcludeKbRequiringReboot) {
-                $params['WindowParameterExcludeKbRequiringReboot'] = $true
-            }
-        } else {
-            $params['LinuxParameterClassificationToInclude'] = $schedule.Classifications
-            if ($schedule.PackageInclude -and $schedule.PackageInclude.Count -gt 0) {
-                $params['LinuxParameterPackageNameMaskToInclude'] = $schedule.PackageInclude
-            }
-            if ($schedule.PackageExclude -and $schedule.PackageExclude.Count -gt 0) {
-                $params['LinuxParameterPackageNameMaskToExclude'] = $schedule.PackageExclude
+        # InGuestPatch-specific params (reboot, classifications, KB/package filters)
+        if ($schedule.MaintenanceScope -eq "InGuestPatch") {
+            $params['InstallPatchRebootSetting'] = $schedule.RebootSetting
+            $params['ExtensionProperty'] = @{ inGuestPatchMode = "User" }
+
+            # OS-specific classification and filter params
+            if ($schedule.OsType -eq "Windows") {
+                $params['WindowParameterClassificationToInclude'] = $schedule.Classifications
+                if ($schedule.KbInclude -and $schedule.KbInclude.Count -gt 0) {
+                    $params['WindowParameterKbNumberToInclude'] = $schedule.KbInclude
+                }
+                if ($schedule.KbExclude -and $schedule.KbExclude.Count -gt 0) {
+                    $params['WindowParameterKbNumberToExclude'] = $schedule.KbExclude
+                }
+                if ($schedule.ExcludeKbRequiringReboot) {
+                    $params['WindowParameterExcludeKbRequiringReboot'] = $true
+                }
+            } else {
+                $params['LinuxParameterClassificationToInclude'] = $schedule.Classifications
+                if ($schedule.PackageInclude -and $schedule.PackageInclude.Count -gt 0) {
+                    $params['LinuxParameterPackageNameMaskToInclude'] = $schedule.PackageInclude
+                }
+                if ($schedule.PackageExclude -and $schedule.PackageExclude.Count -gt 0) {
+                    $params['LinuxParameterPackageNameMaskToExclude'] = $schedule.PackageExclude
+                }
             }
         }
 
-        Write-Log "  Creating maintenance config '$configName' ($($schedule.OsType))..."
+        Write-Log "  Creating maintenance config '$configName' ($($schedule.MaintenanceScope))..."
         $config = New-AzMaintenanceConfiguration @params -ErrorAction Stop
         $schedule._ConfigResourceId = $config.Id
         $createdConfigs += $config

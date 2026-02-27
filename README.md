@@ -177,7 +177,19 @@ The interactive wizard walks you through each schedule step by step:
 Enter a name for this maintenance configuration: Patch-Windows-Weekly-Sat
 ```
 
-**Step 2 — OS Type:**
+**Step 2 — Maintenance Scope:**
+```
+  Maintenance Scope
+  ─────────────────
+    [1] InGuestPatch (Recommended — OS patching for VMs via Azure Update Manager)
+    [2] Host (Platform updates for dedicated hosts / isolated VMs)
+    [3] OSImage (OS image updates for VM scale sets)
+    [4] Extension (VM extension maintenance)
+    [5] SQLDB (Azure SQL Database maintenance)
+    [6] SQLManagedInstance (Azure SQL Managed Instance maintenance)
+```
+
+**Step 3 — OS Type:**
 ```
   Target OS Type
   ──────────────
@@ -185,7 +197,7 @@ Enter a name for this maintenance configuration: Patch-Windows-Weekly-Sat
     [2] Linux
 ```
 
-**Step 3 — Update Classifications (OS-specific multi-select):**
+**Step 4 — Update Classifications (OS-specific multi-select):**
 
 For Windows:
 ```
@@ -214,7 +226,7 @@ For Linux:
     [A] All of the above
 ```
 
-**Step 4 — KB/Package Filters (optional):**
+**Step 5 — KB/Package Filters (optional):**
 
 Windows:
 ```
@@ -229,7 +241,7 @@ Enter package name masks to INCLUDE (comma-separated, or press Enter to skip): k
 Enter package name masks to EXCLUDE (comma-separated, or press Enter to skip): curl
 ```
 
-**Step 5 — Reboot Setting:**
+**Step 6 — Reboot Setting:**
 ```
   Reboot Setting After Patching
   ─────────────────────────────
@@ -238,7 +250,7 @@ Enter package name masks to EXCLUDE (comma-separated, or press Enter to skip): c
     [3] NeverReboot
 ```
 
-**Step 6 — Recurrence:**
+**Step 7 — Recurrence:**
 ```
   Recurrence Pattern
   ──────────────────
@@ -260,10 +272,10 @@ Enter maintenance window duration (HH:MM, e.g., 03:00): 03:00
 Enter timezone (e.g., Eastern Standard Time, UTC): Eastern Standard Time
 ```
 
-**Step 7 — Dynamic Scopes (optional):**
+**Step 8 — Dynamic Scopes (optional):**
 See [Dynamic Scopes](#dynamic-scopes) section below.
 
-**Step 8 — Pre/Post Tasks (optional):**
+**Step 9 — Pre/Post Tasks (optional):**
 ```
 Enter a pre-patching task (script URI or press Enter to skip):
 Enter a post-patching task (script URI or press Enter to skip):
@@ -342,6 +354,17 @@ The script is **idempotent** — safe to re-run:
 
 ## Maintenance Config Options Reference
 
+### Maintenance Scopes
+
+| Scope | Description |
+|---|---|
+| `InGuestPatch` | In-guest OS patching for VMs via Azure Update Manager (most common) |
+| `Host` | Platform updates for dedicated hosts and isolated VMs |
+| `OSImage` | OS image updates for VM scale sets with automatic OS upgrades |
+| `Extension` | VM extension maintenance |
+| `SQLDB` | Azure SQL Database maintenance windows |
+| `SQLManagedInstance` | Azure SQL Managed Instance maintenance windows |
+
 ### Update Classifications
 
 | Classification | Windows | Linux | Description |
@@ -401,6 +424,7 @@ Full example for non-interactive mode:
   "MaintenanceSchedules": [
     {
       "Name": "Patch-Windows-Weekly-Sat",
+      "MaintenanceScope": "InGuestPatch",
       "OsType": "Windows",
       "Classifications": ["Critical", "Security", "UpdateRollup"],
       "KbInclude": [],
@@ -432,6 +456,7 @@ Full example for non-interactive mode:
     },
     {
       "Name": "Patch-Linux-Monthly-3rdSat",
+      "MaintenanceScope": "InGuestPatch",
       "OsType": "Linux",
       "Classifications": ["Critical", "Security", "Other"],
       "PackageInclude": ["kernel", "lib"],
@@ -471,6 +496,7 @@ Full example for non-interactive mode:
 | `Location` | string | ✓ | Azure Gov region |
 | `MaintenanceSchedules` | array | ✓ | Array of schedule objects |
 | `MaintenanceSchedules[].Name` | string | ✓ | Schedule name |
+| `MaintenanceSchedules[].MaintenanceScope` | string | | `InGuestPatch` (default), `Host`, `OSImage`, `Extension`, `SQLDB`, `SQLManagedInstance` |
 | `MaintenanceSchedules[].OsType` | string | ✓ | `Windows` or `Linux` |
 | `MaintenanceSchedules[].Classifications` | string[] | ✓ | Update classifications |
 | `MaintenanceSchedules[].KbInclude` | string[] | | KB numbers to include (Windows) |
