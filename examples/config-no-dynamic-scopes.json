@@ -1,0 +1,40 @@
+{
+  "_comment": "Creates maintenance configurations without dynamic scopes. VMs must be statically assigned to the maintenance configurations via the Azure portal, CLI, or a separate script.",
+  "ManagementGroupName": "Contoso-Gov",
+  "SubscriptionId": "00000000-0000-0000-0000-000000000001",
+  "ResourceGroupName": "rg-update-manager",
+  "Location": "usgovvirginia",
+  "AzureEnvironment": "AzureUSGovernment",
+  "CreateResourceGroup": false,
+  "RegisterProviders": false,
+  "RunRemediation": false,
+  "MaintenanceSchedules": [
+    {
+      "Name": "Patch-Windows-Weekly",
+      "MaintenanceScope": "InGuestPatch",
+      "OsType": "Windows",
+      "Classifications": ["Critical", "Security"],
+      "KbInclude": [],
+      "KbExclude": [],
+      "ExcludeKbRequiringReboot": false,
+      "RebootSetting": "IfRequired",
+      "RecurEvery": "Week Saturday",
+      "StartDateTime": "2026-03-07 02:00",
+      "Duration": "03:00",
+      "Timezone": "Eastern Standard Time"
+    },
+    {
+      "Name": "Patch-Linux-Weekly",
+      "MaintenanceScope": "InGuestPatch",
+      "OsType": "Linux",
+      "Classifications": ["Critical", "Security"],
+      "PackageInclude": [],
+      "PackageExclude": [],
+      "RebootSetting": "IfRequired",
+      "RecurEvery": "Week Sunday",
+      "StartDateTime": "2026-03-08 03:00",
+      "Duration": "02:00",
+      "Timezone": "UTC"
+    }
+  ]
+}

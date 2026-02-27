@@ -617,8 +617,11 @@ The `examples/` folder contains ready-to-use JSON config files:
 
 | File | Description |
 |---|---|
-| [`config-basic.json`](examples/config-basic.json) | Minimal setup — one Windows + one Linux weekly schedule with production tag filtering |
-| [`config-advanced.json`](examples/config-advanced.json) | Multi-environment setup — 4 schedules (Prod + Dev/Test × Windows + Linux) with per-environment dynamic scopes, KB exclusions, package filters, pre/post tasks, and mixed recurrence patterns |
+| [`config-basic.json`](examples/config-basic.json) | Azure Gov, user login, existing RG — one Windows + one Linux weekly schedule with production tag filtering |
+| [`config-advanced.json`](examples/config-advanced.json) | Azure Gov, SPN auth, creates RG — 4 schedules (Prod + Dev/Test × Windows + Linux) with KB exclusions, package filters, pre/post tasks |
+| [`config-commercial.json`](examples/config-commercial.json) | Azure Commercial, SPN auth — two production schedules with dynamic scopes targeting `eastus`/`eastus2` |
+| [`config-no-dynamic-scopes.json`](examples/config-no-dynamic-scopes.json) | No dynamic scopes — creates maintenance configs only. VMs must be statically assigned afterward via portal/CLI |
+| [`config-minimal.json`](examples/config-minimal.json) | Absolute minimum — single Windows weekly schedule, all defaults. User login, existing RG, Gov environment |
 
 ### Running with an example config
 

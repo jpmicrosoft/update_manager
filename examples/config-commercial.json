@@ -1,0 +1,72 @@
+{
+  "ManagementGroupName": "Contoso",
+  "SubscriptionId": "00000000-0000-0000-0000-000000000001",
+  "ResourceGroupName": "rg-update-manager",
+  "TenantId": "00000000-0000-0000-0000-000000000002",
+  "AppId": "00000000-0000-0000-0000-000000000003",
+  "AppSecret": "<YOUR_CLIENT_SECRET>",
+  "Location": "eastus",
+  "AzureEnvironment": "AzureCloud",
+  "CreateResourceGroup": false,
+  "RegisterProviders": false,
+  "RunRemediation": false,
+  "MaintenanceSchedules": [
+    {
+      "_comment": "Production Windows — critical/security, weekly Saturday 2AM ET",
+      "Name": "Patch-Win-Prod-Weekly",
+      "MaintenanceScope": "InGuestPatch",
+      "OsType": "Windows",
+      "Classifications": ["Critical", "Security", "UpdateRollup"],
+      "KbInclude": [],
+      "KbExclude": [],
+      "ExcludeKbRequiringReboot": false,
+      "RebootSetting": "IfRequired",
+      "RecurEvery": "Week Saturday",
+      "StartDateTime": "2026-03-07 02:00",
+      "Duration": "03:00",
+      "Timezone": "Eastern Standard Time",
+      "DynamicScopes": [
+        {
+          "Subscriptions": [
+            "00000000-0000-0000-0000-000000000010",
+            "00000000-0000-0000-0000-000000000011"
+          ],
+          "Locations": ["eastus", "eastus2"],
+          "OsTypes": ["Windows"],
+          "Tags": {
+            "Environment": ["Production"]
+          },
+          "TagOperator": "Any"
+        }
+      ]
+    },
+    {
+      "_comment": "Production Linux — critical/security, weekly Sunday 3AM UTC",
+      "Name": "Patch-Linux-Prod-Weekly",
+      "MaintenanceScope": "InGuestPatch",
+      "OsType": "Linux",
+      "Classifications": ["Critical", "Security"],
+      "PackageInclude": [],
+      "PackageExclude": [],
+      "RebootSetting": "IfRequired",
+      "RecurEvery": "Week Sunday",
+      "StartDateTime": "2026-03-08 03:00",
+      "Duration": "02:00",
+      "Timezone": "UTC",
+      "DynamicScopes": [
+        {
+          "Subscriptions": [
+            "00000000-0000-0000-0000-000000000010",
+            "00000000-0000-0000-0000-000000000011"
+          ],
+          "Locations": ["eastus", "eastus2"],
+          "OsTypes": ["Linux"],
+          "Tags": {
+            "Environment": ["Production"]
+          },
+          "TagOperator": "Any"
+        }
+      ]
+    }
+  ]
+}

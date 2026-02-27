@@ -1,0 +1,18 @@
+{
+  "ManagementGroupName": "Contoso-Gov",
+  "SubscriptionId": "00000000-0000-0000-0000-000000000001",
+  "ResourceGroupName": "rg-update-manager",
+  "Location": "usgovvirginia",
+  "MaintenanceSchedules": [
+    {
+      "Name": "Patch-Windows-Weekly",
+      "OsType": "Windows",
+      "Classifications": ["Critical", "Security"],
+      "RebootSetting": "IfRequired",
+      "RecurEvery": "Week Saturday",
+      "StartDateTime": "2026-03-07 02:00",
+      "Duration": "03:00",
+      "Timezone": "Eastern Standard Time"
+    }
+  ]
+}
