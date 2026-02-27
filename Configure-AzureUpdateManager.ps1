@@ -515,6 +515,12 @@ function New-ScheduleWizard {
 
                 $schedule.DynamicScopes += $scope
             } while (Read-YesNo "Add another dynamic scope?")
+        } else {
+            Write-Host ""
+            Write-Host "  ⚠  No dynamic scope selected. VMs must be assigned to this maintenance" -ForegroundColor Yellow
+            Write-Host "     configuration manually (static assignment) via the Azure portal, CLI," -ForegroundColor Yellow
+            Write-Host "     or a separate script before patching will occur." -ForegroundColor Yellow
+            Write-Host ""
         }
 
         # Step 9: Pre/Post Tasks
@@ -1126,7 +1132,8 @@ function Show-ValidationSummary {
     if ($DynamicScopes -and $DynamicScopes.Count -gt 0) {
         Write-Host "    Total: $($DynamicScopes.Count)" -ForegroundColor Green
     } else {
-        Write-Host "    None created"
+        Write-Host "    None created — VMs must be statically assigned to maintenance" -ForegroundColor Yellow
+        Write-Host "    configurations via Azure portal, CLI, or a separate script." -ForegroundColor Yellow
     }
     Write-Host ""
 
