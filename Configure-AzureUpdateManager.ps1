@@ -274,7 +274,8 @@ function Connect-Azure {
         [string]$TenantId,
         [string]$AppId,
         [System.Security.SecureString]$AppSecret,
-        [string]$AzureEnvironment = 'AzureUSGovernment'
+        [string]$AzureEnvironment = 'AzureUSGovernment',
+        [string]$SubscriptionId
     )
 
     $envDisplayName = if ($AzureEnvironment -eq 'AzureCloud') { 'Azure Commercial' } else { 'Azure Government' }
@@ -292,6 +293,7 @@ function Connect-Azure {
             Credential       = $credential
             WarningAction    = 'SilentlyContinue'
         }
+        if ($SubscriptionId) { $connectParams['Subscription'] = $SubscriptionId }
         Connect-AzAccount @connectParams | Out-Null
     } else {
         Write-Log "Authenticating to $envDisplayName with interactive user login..."
@@ -300,6 +302,7 @@ function Connect-Azure {
             WarningAction = 'SilentlyContinue'
         }
         if ($TenantId) { $connectParams['TenantId'] = $TenantId }
+        if ($SubscriptionId) { $connectParams['Subscription'] = $SubscriptionId }
         Connect-AzAccount @connectParams | Out-Null
     }
 
@@ -1330,7 +1333,7 @@ try {
     }
 
     # Phase 1: Authenticate
-    Connect-Azure -TenantId $TenantId -AppId $AppId -AppSecret $AppSecret -AzureEnvironment $AzureEnvironment
+    Connect-Azure -TenantId $TenantId -AppId $AppId -AppSecret $AppSecret -AzureEnvironment $AzureEnvironment -SubscriptionId $SubscriptionId
 
     # Phase 2: Register Resource Providers (optional)
     $providerResults = @()
