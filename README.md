@@ -181,12 +181,9 @@ Enter a name for this maintenance configuration: Patch-Windows-Weekly-Sat
 ```
   Maintenance Scope
   ─────────────────
-    [1] InGuestPatch (Recommended — OS patching for VMs via Azure Update Manager)
-    [2] Host (Platform updates for dedicated hosts / isolated VMs)
-    [3] OSImage (OS image updates for VM scale sets)
-    [4] Extension (VM extension maintenance)
-    [5] SQLDB (Azure SQL Database maintenance)
-    [6] SQLManagedInstance (Azure SQL Managed Instance maintenance)
+    [1] Guest (Recommended — in-guest OS patching for VMs via Azure Update Manager)
+    [2] Host (Platform updates for isolated VMs, isolated scale sets, dedicated hosts)
+    [3] OS image (OS image upgrades for virtual machine scale sets)
 ```
 
 **Step 3 — OS Type:**
@@ -356,14 +353,11 @@ The script is **idempotent** — safe to re-run:
 
 ### Maintenance Scopes
 
-| Scope | Description |
-|---|---|
-| `InGuestPatch` | In-guest OS patching for VMs via Azure Update Manager (most common) |
-| `Host` | Platform updates for dedicated hosts and isolated VMs |
-| `OSImage` | OS image updates for VM scale sets with automatic OS upgrades |
-| `Extension` | VM extension maintenance |
-| `SQLDB` | Azure SQL Database maintenance windows |
-| `SQLManagedInstance` | Azure SQL Managed Instance maintenance windows |
+| Portal Name | PowerShell Value | Description |
+|---|---|---|
+| **Guest** | `InGuestPatch` | In-guest OS patching for VMs and Azure Arc-enabled servers via Azure Update Manager. Requires `AutomaticByPlatform` patch orchestration mode. Max window: 3h 55m. Min recurrence: 6 hours. |
+| **Host** | `Host` | Platform updates for isolated VMs, isolated VM scale sets, and dedicated hosts. Updates don't require a restart. Min window: 2 hours. Schedules up to 35 days out. |
+| **OS image** | `OSImage` | OS image upgrades for VM scale sets with automatic OS upgrades enabled. Min window: 5 hours. Max recurrence: 7 days. |
 
 ### Update Classifications
 
@@ -496,7 +490,7 @@ Full example for non-interactive mode:
 | `Location` | string | ✓ | Azure Gov region |
 | `MaintenanceSchedules` | array | ✓ | Array of schedule objects |
 | `MaintenanceSchedules[].Name` | string | ✓ | Schedule name |
-| `MaintenanceSchedules[].MaintenanceScope` | string | | `InGuestPatch` (default), `Host`, `OSImage`, `Extension`, `SQLDB`, `SQLManagedInstance` |
+| `MaintenanceSchedules[].MaintenanceScope` | string | | `InGuestPatch` (default, portal: "Guest"), `Host`, or `OSImage` |
 | `MaintenanceSchedules[].OsType` | string | ✓ | `Windows` or `Linux` |
 | `MaintenanceSchedules[].Classifications` | string[] | ✓ | Update classifications |
 | `MaintenanceSchedules[].KbInclude` | string[] | | KB numbers to include (Windows) |

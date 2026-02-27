@@ -358,14 +358,11 @@ function New-ScheduleWizard {
 
         # Step 2: Maintenance Scope
         $scopeChoice = Show-Menu -Title "Maintenance Scope" -Options @(
-            "InGuestPatch (Recommended — OS patching for VMs via Azure Update Manager)",
-            "Host (Platform updates for dedicated hosts / isolated VMs)",
-            "OSImage (OS image updates for VM scale sets)",
-            "Extension (VM extension maintenance)",
-            "SQLDB (Azure SQL Database maintenance)",
-            "SQLManagedInstance (Azure SQL Managed Instance maintenance)"
+            "Guest (Recommended — in-guest OS patching for VMs via Azure Update Manager)",
+            "Host (Platform updates for isolated VMs, isolated scale sets, dedicated hosts)",
+            "OS image (OS image upgrades for virtual machine scale sets)"
         )
-        $schedule.MaintenanceScope = @("InGuestPatch", "Host", "OSImage", "Extension", "SQLDB", "SQLManagedInstance")[$scopeChoice - 1]
+        $schedule.MaintenanceScope = @("InGuestPatch", "Host", "OSImage")[$scopeChoice - 1]
 
         # Steps 3-6 are only relevant for InGuestPatch scope
         if ($schedule.MaintenanceScope -eq "InGuestPatch") {
