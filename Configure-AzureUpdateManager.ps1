@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-    Configures Azure Update Manager for patching in a greenfield Azure Government environment.
+    Configures Azure Update Manager for patching in a greenfield Azure environment.
 
 .DESCRIPTION
     This script performs end-to-end configuration of Azure Update Manager including:
-    - Authentication to Azure Government (interactive user login or SPN)
+    - Authentication to Azure Government or Azure Commercial (interactive user login or SPN)
     - Optional resource provider registration across subscriptions under a management group
     - Azure Policy assignments (periodic assessment, patch mode prerequisites, scheduled updates) per OS
     - Maintenance configuration creation with full options (classifications, KB/package filters, reboot, pre/post tasks)
@@ -35,7 +35,10 @@
     SPN client secret as a SecureString. Required only when using SPN authentication.
 
 .PARAMETER Location
-    Azure region for maintenance configurations (e.g., usgovvirginia). Prompted if not supplied.
+    Azure region for maintenance configurations (e.g., usgovvirginia, eastus). Prompted if not supplied.
+
+.PARAMETER AzureEnvironment
+    Azure cloud environment. Valid values: AzureUSGovernment, AzureCloud. Prompted if not supplied.
 
 .PARAMETER ConfigFile
     Optional path to a JSON configuration file for non-interactive mode.
@@ -49,12 +52,16 @@
     Skipped by default because managed identity RBAC must be assigned first by the identity team.
 
 .EXAMPLE
-    # Interactive mode with user login
-    .\Configure-AzureUpdateManager.ps1
+    # Interactive mode with user login (Azure Gov)
+    .\Configure-AzureUpdateManager.ps1 -AzureEnvironment AzureUSGovernment
+
+.EXAMPLE
+    # Interactive mode with user login (Azure Commercial)
+    .\Configure-AzureUpdateManager.ps1 -AzureEnvironment AzureCloud
 
 .EXAMPLE
     # Interactive mode with SPN
-    .\Configure-AzureUpdateManager.ps1 -TenantId "xxx" -AppId "yyy"
+    .\Configure-AzureUpdateManager.ps1 -AzureEnvironment AzureUSGovernment -TenantId "xxx" -AppId "yyy"
 
 .EXAMPLE
     # Non-interactive mode
@@ -87,6 +94,10 @@ param(
 
     [Parameter()]
     [string]$Location,
+
+    [Parameter()]
+    [ValidateSet('AzureUSGovernment', 'AzureCloud')]
+    [string]$AzureEnvironment,
 
     [Parameter()]
     [string]$ConfigFile,
@@ -259,21 +270,24 @@ function Assert-RequiredModules {
 
 #region ── Authentication ──
 
-function Connect-AzureGov {
+function Connect-Azure {
     param(
         [string]$TenantId,
         [string]$AppId,
-        [System.Security.SecureString]$AppSecret
+        [System.Security.SecureString]$AppSecret,
+        [string]$AzureEnvironment = 'AzureUSGovernment'
     )
+
+    $envDisplayName = if ($AzureEnvironment -eq 'AzureCloud') { 'Azure Commercial' } else { 'Azure Government' }
 
     if ($AppId -and $AppSecret) {
         if (-not $TenantId) {
             throw "TenantId is required when using SPN authentication."
         }
-        Write-Log "Authenticating to Azure Government with SPN..."
+        Write-Log "Authenticating to $envDisplayName with SPN..."
         $credential = New-Object System.Management.Automation.PSCredential($AppId, $AppSecret)
         $connectParams = @{
-            Environment      = 'AzureUSGovernment'
+            Environment      = $AzureEnvironment
             ServicePrincipal = $true
             TenantId         = $TenantId
             Credential       = $credential
@@ -281,9 +295,9 @@ function Connect-AzureGov {
         }
         Connect-AzAccount @connectParams | Out-Null
     } else {
-        Write-Log "Authenticating to Azure Government with interactive user login..."
+        Write-Log "Authenticating to $envDisplayName with interactive user login..."
         $connectParams = @{
-            Environment   = 'AzureUSGovernment'
+            Environment   = $AzureEnvironment
             WarningAction = 'SilentlyContinue'
         }
         if ($TenantId) { $connectParams['TenantId'] = $TenantId }
@@ -623,6 +637,7 @@ function Import-ConfigFile {
         AppId                = if ($config.PSObject.Properties['AppId']) { $config.AppId } else { "" }
         AppSecret            = if ($config.PSObject.Properties['AppSecret']) { $config.AppSecret } else { "" }
         Location             = $config.Location
+        AzureEnvironment     = if ($config.PSObject.Properties['AzureEnvironment']) { $config.AzureEnvironment } else { "AzureUSGovernment" }
         Schedules            = $schedules
         CreateResourceGroup  = if ($config.PSObject.Properties['CreateResourceGroup']) { $config.CreateResourceGroup } else { $false }
         RegisterProviders    = if ($config.PSObject.Properties['RegisterProviders']) { $config.RegisterProviders } else { $false }
@@ -681,7 +696,7 @@ function New-PolicyAssignmentAtMG {
     $policyDef = Get-AzPolicyDefinition -Id $fullPolicyDefId -ErrorAction SilentlyContinue
     if (-not $policyDef) {
         Write-Log "  Policy definition ID '$PolicyDefinitionId' not found in this Azure environment." -Level ERROR
-        Write-Log "  This policy may not be available in Azure Government. Verify at https://aka.ms/AzGovPolicy" -Level ERROR
+        Write-Log "  This policy may not be available in this Azure environment." -Level ERROR
         throw "Policy definition '$PolicyDefinitionId' not found. It may not be available in this Azure cloud."
     }
 
@@ -1214,6 +1229,7 @@ try {
         $TenantId            = $config.TenantId
         $AppId               = $config.AppId
         $Location            = $config.Location
+        $AzureEnvironment    = $config.AzureEnvironment
         $schedules           = $config.Schedules
         $createRG            = $config.CreateResourceGroup
 
@@ -1224,6 +1240,16 @@ try {
         if ($config.RunRemediation)    { $RunRemediation = [switch]::new($true) }
     } else {
         # ── Interactive Mode: prompt for missing parameters ──
+
+        # Azure Environment
+        if (-not $AzureEnvironment) {
+            $envChoice = Show-Menu -Title "Azure Environment" -Options @(
+                "Azure Government (AzureUSGovernment)",
+                "Azure Commercial (AzureCloud)"
+            )
+            $AzureEnvironment = @("AzureUSGovernment", "AzureCloud")[$envChoice - 1]
+        }
+
         if (-not $ManagementGroupName) {
             $ManagementGroupName = Read-RequiredInput "Enter the Management Group name"
         }
@@ -1271,19 +1297,41 @@ try {
         }
 
         if (-not $Location) {
-            $locChoice = Show-Menu -Title "Azure Government Region" -Options @(
-                "usgovvirginia",
-                "usgovarizona",
-                "usgovtexas",
-                "usdodeast",
-                "usdodcentral"
-            )
-            $Location = @("usgovvirginia", "usgovarizona", "usgovtexas", "usdodeast", "usdodcentral")[$locChoice - 1]
+            if ($AzureEnvironment -eq 'AzureCloud') {
+                $locChoice = Show-Menu -Title "Azure Region" -Options @(
+                    "eastus",
+                    "eastus2",
+                    "westus",
+                    "westus2",
+                    "westus3",
+                    "centralus",
+                    "northcentralus",
+                    "southcentralus",
+                    "westeurope",
+                    "northeurope",
+                    "Other (type manually)"
+                )
+                $commercialRegions = @("eastus", "eastus2", "westus", "westus2", "westus3", "centralus", "northcentralus", "southcentralus", "westeurope", "northeurope")
+                if ($locChoice -le $commercialRegions.Count) {
+                    $Location = $commercialRegions[$locChoice - 1]
+                } else {
+                    $Location = Read-RequiredInput "Enter the Azure region name"
+                }
+            } else {
+                $locChoice = Show-Menu -Title "Azure Government Region" -Options @(
+                    "usgovvirginia",
+                    "usgovarizona",
+                    "usgovtexas",
+                    "usdodeast",
+                    "usdodcentral"
+                )
+                $Location = @("usgovvirginia", "usgovarizona", "usgovtexas", "usdodeast", "usdodcentral")[$locChoice - 1]
+            }
         }
     }
 
     # Phase 1: Authenticate
-    Connect-AzureGov -TenantId $TenantId -AppId $AppId -AppSecret $AppSecret
+    Connect-Azure -TenantId $TenantId -AppId $AppId -AppSecret $AppSecret -AzureEnvironment $AzureEnvironment
 
     # Phase 2: Register Resource Providers (optional)
     $providerResults = @()

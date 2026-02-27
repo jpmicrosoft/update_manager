@@ -6,6 +6,7 @@
   "AppId": "00000000-0000-0000-0000-000000000003",
   "AppSecret": "<YOUR_CLIENT_SECRET>",
   "Location": "usgovvirginia",
+  "AzureEnvironment": "AzureUSGovernment",
   "CreateResourceGroup": true,
   "RegisterProviders": true,
   "RunRemediation": false,

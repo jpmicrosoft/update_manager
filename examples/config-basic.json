@@ -3,6 +3,7 @@
   "SubscriptionId": "00000000-0000-0000-0000-000000000001",
   "ResourceGroupName": "rg-update-manager",
   "Location": "usgovvirginia",
+  "AzureEnvironment": "AzureUSGovernment",
   "CreateResourceGroup": false,
   "RegisterProviders": false,
   "RunRemediation": false,

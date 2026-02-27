@@ -1,6 +1,6 @@
 # Azure Update Manager — Greenfield Configuration Script
 
-Automated end-to-end configuration of Azure Update Manager for patching in **Azure Government** environments. This PowerShell script handles authentication (interactive user or SPN), Azure Policy assignments, maintenance configuration creation with full patching options, dynamic scoping, and managed identity RBAC reporting — all through an interactive wizard or a JSON config file.
+Automated end-to-end configuration of Azure Update Manager for patching in **Azure Government** and **Azure Commercial** environments. This PowerShell script handles authentication (interactive user or SPN), Azure Policy assignments, maintenance configuration creation with full patching options, dynamic scoping, and managed identity RBAC reporting — all through an interactive wizard or a JSON config file.
 
 ---
 
@@ -31,7 +31,7 @@ Automated end-to-end configuration of Azure Update Manager for patching in **Azu
 
 This script configures the following Azure Update Manager components:
 
-1. **Authentication** — Interactive user login or SPN authentication to Azure Government
+1. **Authentication** — Interactive user login or SPN authentication to Azure Government or Azure Commercial
 2. **Resource Provider Registration** *(optional)* — Registers `Microsoft.Maintenance` and `Microsoft.GuestConfiguration` across all subscriptions under a management group
 3. **Azure Policy Assignments** (6 total, per OS):
    - **Periodic Assessment** — Enables automatic checking for missing updates (Windows + Linux)
@@ -81,7 +81,7 @@ Management Group (policy scope)
 
 ### Azure Requirements
 
-- **Azure Government subscription(s)** under a management group
+- **Azure Government or Azure Commercial subscription(s)** under a management group
 - **Deploying identity** (user account or SPN) with the following RBAC roles at the **management group** scope:
 
   | Role | Role Definition ID | Purpose |
@@ -96,7 +96,7 @@ Management Group (policy scope)
 
 ### Network Requirements
 
-- Outbound connectivity to Azure Government endpoints (`*.usgovcloudapi.net`)
+- Outbound connectivity to Azure endpoints (`*.usgovcloudapi.net` for Gov, `*.azure.com` for Commercial)
 - VMs must have connectivity to Windows Update or Linux package repositories
 
 ---
@@ -132,15 +132,25 @@ The simplest way to run the script — it will prompt you for everything:
 Or provide some parameters upfront and let the wizard handle the rest:
 
 ```powershell
-# Using interactive user login
+# Using interactive user login (Azure Gov)
 .\Configure-AzureUpdateManager.ps1 `
+    -AzureEnvironment AzureUSGovernment `
     -ManagementGroupName "MyManagementGroup" `
     -SubscriptionId "sub-id-for-configs" `
     -ResourceGroupName "rg-update-manager" `
     -Location "usgovvirginia"
 
+# Using interactive user login (Azure Commercial)
+.\Configure-AzureUpdateManager.ps1 `
+    -AzureEnvironment AzureCloud `
+    -ManagementGroupName "MyManagementGroup" `
+    -SubscriptionId "sub-id-for-configs" `
+    -ResourceGroupName "rg-update-manager" `
+    -Location "eastus"
+
 # Using SPN authentication
 .\Configure-AzureUpdateManager.ps1 `
+    -AzureEnvironment AzureUSGovernment `
     -TenantId "your-tenant-id" `
     -AppId "your-spn-app-id" `
     -ManagementGroupName "MyManagementGroup" `
@@ -183,12 +193,12 @@ The wizard prompts you to choose authentication method. For interactive login, a
 **Option 2 — Service Principal (recommended for automation):**
 
 ```powershell
-.\Configure-AzureUpdateManager.ps1 -TenantId "xxx" -AppId "yyy"
+.\Configure-AzureUpdateManager.ps1 -AzureEnvironment AzureUSGovernment -TenantId "xxx" -AppId "yyy"
 # The script prompts for AppSecret securely via Read-Host -AsSecureString
 
 # Or pass AppSecret programmatically (e.g., from a pipeline secret):
 $secret = ConvertTo-SecureString "your-secret" -AsPlainText -Force
-.\Configure-AzureUpdateManager.ps1 -TenantId "xxx" -AppId "yyy" -AppSecret $secret
+.\Configure-AzureUpdateManager.ps1 -AzureEnvironment AzureCloud -TenantId "xxx" -AppId "yyy" -AppSecret $secret
 ```
 
 **Required RBAC roles at the management group scope (both methods):**
@@ -422,7 +432,8 @@ The script is **idempotent** — safe to re-run:
 | `TenantId` | String | No* | Azure AD tenant ID (required for SPN, optional for user login) |
 | `AppId` | String | No* | SPN Application (Client) ID (omit for user login) |
 | `AppSecret` | SecureString | No* | SPN Client Secret (omit for user login) |
-| `Location` | String | Yes* | Azure Gov region (e.g., `usgovvirginia`) |
+| `Location` | String | Yes* | Azure region (e.g., `usgovvirginia`, `eastus`) |
+| `AzureEnvironment` | String | Yes* | `AzureUSGovernment` or `AzureCloud` |
 | `ConfigFile` | String | No | Path to JSON config for non-interactive mode |
 | `RegisterProviders` | Switch | No | Enable resource provider registration across subscriptions |
 | `RunRemediation` | Switch | No | Trigger policy remediation tasks (requires managed identity RBAC) |
@@ -498,6 +509,7 @@ Full example for non-interactive mode:
   "AppId": "00000000-0000-0000-0000-000000000003",
   "AppSecret": "<YOUR_CLIENT_SECRET>",
   "Location": "usgovvirginia",
+  "AzureEnvironment": "AzureUSGovernment",
   "CreateResourceGroup": false,
   "RegisterProviders": false,
   "RunRemediation": false,
@@ -573,7 +585,8 @@ Full example for non-interactive mode:
 | `TenantId` | string | | Azure AD tenant ID (required for SPN auth) |
 | `AppId` | string | | SPN Application ID (omit for user login) |
 | `AppSecret` | string | | SPN Client Secret (omit for user login) |
-| `Location` | string | ✓ | Azure Gov region |
+| `Location` | string | ✓ | Azure region |
+| `AzureEnvironment` | string | | `AzureUSGovernment` (default) or `AzureCloud` |
 | `CreateResourceGroup` | boolean | | `true` to create RG, `false` to use existing (default: `false`) |
 | `RegisterProviders` | boolean | | Enable resource provider registration (default: `false`) |
 | `RunRemediation` | boolean | | Trigger policy remediation tasks (default: `false`) |
