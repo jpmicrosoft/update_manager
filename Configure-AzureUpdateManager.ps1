@@ -670,7 +670,9 @@ function New-PolicyAssignmentAtMG {
     $existing = $ExistingAssignments | Where-Object { $_.Name -eq $AssignmentName }
     if ($existing) {
         Write-Log "  Policy assignment '$AssignmentName' already exists. Skipping." -Level INFO
-        return $existing[0]
+        # Re-fetch to ensure Identity property is populated
+        $full = Get-AzPolicyAssignment -Id $existing[0].PolicyAssignmentId -ErrorAction SilentlyContinue
+        return $(if ($full) { $full } else { $existing[0] })
     }
 
     # Check for existing assignment by policy definition ID + matching parameters
@@ -689,7 +691,8 @@ function New-PolicyAssignmentAtMG {
         }
         if ($paramsMatch) {
             Write-Log "  Policy definition '$PolicyDefinitionId' with matching parameters already assigned as '$($candidate.Name)'. Skipping." -Level WARN
-            return $candidate
+            $full = Get-AzPolicyAssignment -Id $candidate.PolicyAssignmentId -ErrorAction SilentlyContinue
+            return $(if ($full) { $full } else { $candidate })
         }
     }
 
@@ -1077,13 +1080,16 @@ function Export-IdentityReport {
     $report = @()
 
     foreach ($assignment in $PolicyAssignments) {
-        if (-not $assignment -or -not $assignment.Identity -or -not $assignment.Identity.PrincipalId) {
+        if (-not $assignment) { continue }
+        $identity = $null
+        try { $identity = $assignment.Identity } catch { }
+        if (-not $identity -or -not $identity.PrincipalId) {
             continue
         }
         $report += [PSCustomObject]@{
             AssignmentName  = $assignment.Name
             DisplayName     = $assignment.DisplayName
-            PrincipalId     = $assignment.Identity.PrincipalId
+            PrincipalId     = $identity.PrincipalId
             IdentityType    = "SystemAssigned"
             RequiredRole    = "Contributor"
             RoleDefinitionId = "b24988ac-6180-42a0-ab88-20f7382dd24c"
