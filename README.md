@@ -73,6 +73,7 @@ Management Group (policy scope)
 | Az.Accounts module | 2.0+ |
 | Az.Resources module | 6.0+ |
 | Az.Maintenance module | 1.0+ |
+| Az.PolicyInsights module | 1.0+ |
 
 ### Azure Requirements
 
@@ -98,9 +99,10 @@ Install the required Az PowerShell modules:
 Install-Module -Name Az.Accounts -Force -Scope CurrentUser
 Install-Module -Name Az.Resources -Force -Scope CurrentUser
 Install-Module -Name Az.Maintenance -Force -Scope CurrentUser
+Install-Module -Name Az.PolicyInsights -Force -Scope CurrentUser
 
 # Verify installation
-Get-Module -ListAvailable -Name Az.Accounts, Az.Resources, Az.Maintenance | 
+Get-Module -ListAvailable -Name Az.Accounts, Az.Resources, Az.Maintenance, Az.PolicyInsights | 
     Select-Object Name, Version
 ```
 
@@ -184,6 +186,7 @@ Enter a name for this maintenance configuration: Patch-Windows-Weekly-Sat
     [1] Guest (Recommended — in-guest OS patching for VMs via Azure Update Manager)
     [2] Host (Platform updates for isolated VMs, isolated scale sets, dedicated hosts)
     [3] OS image (OS image upgrades for virtual machine scale sets)
+    [4] Resource (Network gateways, network security, and other Azure resources)
 ```
 
 **Step 3 — OS Type:**
@@ -243,8 +246,8 @@ Enter package name masks to EXCLUDE (comma-separated, or press Enter to skip): c
   Reboot Setting After Patching
   ─────────────────────────────
     [1] IfRequired (Recommended — reboot only when needed)
-    [2] AlwaysReboot
-    [3] NeverReboot
+    [2] Always (reboot after every patch installation)
+    [3] Never (do not reboot after patching)
 ```
 
 **Step 7 — Recurrence:**
@@ -358,6 +361,7 @@ The script is **idempotent** — safe to re-run:
 | **Guest** | `InGuestPatch` | In-guest OS patching for VMs and Azure Arc-enabled servers via Azure Update Manager. Requires `AutomaticByPlatform` patch orchestration mode. Max window: 3h 55m. Min recurrence: 6 hours. |
 | **Host** | `Host` | Platform updates for isolated VMs, isolated VM scale sets, and dedicated hosts. Updates don't require a restart. Min window: 2 hours. Schedules up to 35 days out. |
 | **OS image** | `OSImage` | OS image upgrades for VM scale sets with automatic OS upgrades enabled. Min window: 5 hours. Max recurrence: 7 days. |
+| **Resource** | `Resource` | Maintenance windows for network gateways (VPN Gateway, ExpressRoute), network security, and other Azure resources. Min window: 5 hours. |
 
 ### Update Classifications
 
@@ -378,8 +382,8 @@ The script is **idempotent** — safe to re-run:
 | Setting | Description |
 |---|---|
 | `IfRequired` | Reboot only when an update requires it (recommended) |
-| `AlwaysReboot` | Always reboot after patching |
-| `NeverReboot` | Never reboot (patches requiring reboot may not take effect) |
+| `Always` | Always reboot after patching |
+| `Never` | Never reboot (patches requiring reboot may not take effect) |
 
 ### Recurrence Patterns
 
@@ -490,7 +494,7 @@ Full example for non-interactive mode:
 | `Location` | string | ✓ | Azure Gov region |
 | `MaintenanceSchedules` | array | ✓ | Array of schedule objects |
 | `MaintenanceSchedules[].Name` | string | ✓ | Schedule name |
-| `MaintenanceSchedules[].MaintenanceScope` | string | | `InGuestPatch` (default, portal: "Guest"), `Host`, or `OSImage` |
+| `MaintenanceSchedules[].MaintenanceScope` | string | | `InGuestPatch` (default, portal: "Guest"), `Host`, `OSImage`, or `Resource` |
 | `MaintenanceSchedules[].OsType` | string | ✓ | `Windows` or `Linux` |
 | `MaintenanceSchedules[].Classifications` | string[] | ✓ | Update classifications |
 | `MaintenanceSchedules[].KbInclude` | string[] | | KB numbers to include (Windows) |
@@ -498,7 +502,7 @@ Full example for non-interactive mode:
 | `MaintenanceSchedules[].ExcludeKbRequiringReboot` | boolean | | Exclude KBs needing reboot (Windows) |
 | `MaintenanceSchedules[].PackageInclude` | string[] | | Package masks to include (Linux) |
 | `MaintenanceSchedules[].PackageExclude` | string[] | | Package masks to exclude (Linux) |
-| `MaintenanceSchedules[].RebootSetting` | string | ✓ | `IfRequired`, `AlwaysReboot`, `NeverReboot` |
+| `MaintenanceSchedules[].RebootSetting` | string | ✓ | `IfRequired`, `Always`, `Never` |
 | `MaintenanceSchedules[].RecurEvery` | string | ✓ | Recurrence pattern |
 | `MaintenanceSchedules[].StartDateTime` | string | ✓ | `YYYY-MM-DD HH:MM` |
 | `MaintenanceSchedules[].Duration` | string | ✓ | `HH:MM` |
@@ -552,7 +556,7 @@ Copy-Item .\examples\config-basic.json .\my-config.json
 
 | Error | Cause | Resolution |
 |---|---|---|
-| `Missing required modules` | Az modules not installed | Run `Install-Module -Name Az.Accounts,Az.Resources,Az.Maintenance -Force` |
+| `Missing required modules` | Az modules not installed | Run `Install-Module -Name Az.Accounts,Az.Resources,Az.Maintenance,Az.PolicyInsights -Force` |
 | `AADSTS7000215: Invalid client secret` | Wrong or expired SPN secret | Regenerate the SPN secret in Azure AD |
 | `AuthorizationFailed` | SPN lacks required RBAC roles | Assign `Contributor` + `Resource Policy Contributor` at management group scope |
 | `ResourceProviderNotRegistered` | Provider not registered in subscription | The script handles this automatically; if it persists, manually register via portal |

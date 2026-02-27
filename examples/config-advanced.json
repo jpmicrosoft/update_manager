@@ -49,7 +49,7 @@
       "KbInclude": [],
       "KbExclude": [],
       "ExcludeKbRequiringReboot": false,
-      "RebootSetting": "NeverReboot",
+      "RebootSetting": "Never",
       "RecurEvery": "Week Sunday",
       "StartDateTime": "2026-03-08 01:00",
       "Duration": "04:00",

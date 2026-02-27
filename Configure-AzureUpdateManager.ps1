@@ -214,7 +214,7 @@ function Read-CommaSeparated {
 #region ── Module Checks ──
 
 function Assert-RequiredModules {
-    $requiredModules = @('Az.Accounts', 'Az.Resources', 'Az.Maintenance')
+    $requiredModules = @('Az.Accounts', 'Az.Resources', 'Az.Maintenance', 'Az.PolicyInsights')
     $missing = @()
     foreach ($mod in $requiredModules) {
         if (-not (Get-Module -ListAvailable -Name $mod)) {
@@ -360,9 +360,10 @@ function New-ScheduleWizard {
         $scopeChoice = Show-Menu -Title "Maintenance Scope" -Options @(
             "Guest (Recommended — in-guest OS patching for VMs via Azure Update Manager)",
             "Host (Platform updates for isolated VMs, isolated scale sets, dedicated hosts)",
-            "OS image (OS image upgrades for virtual machine scale sets)"
+            "OS image (OS image upgrades for virtual machine scale sets)",
+            "Resource (Network gateways, network security, and other Azure resources)"
         )
-        $schedule.MaintenanceScope = @("InGuestPatch", "Host", "OSImage")[$scopeChoice - 1]
+        $schedule.MaintenanceScope = @("InGuestPatch", "Host", "OSImage", "Resource")[$scopeChoice - 1]
 
         # Steps 3-6 are only relevant for InGuestPatch scope
         if ($schedule.MaintenanceScope -eq "InGuestPatch") {
@@ -392,10 +393,10 @@ function New-ScheduleWizard {
             # Step 6: Reboot Setting
             $rebootChoice = Show-Menu -Title "Reboot Setting After Patching" -Options @(
                 "IfRequired (Recommended — reboot only when needed)",
-                "AlwaysReboot",
-                "NeverReboot"
+                "Always (reboot after every patch installation)",
+                "Never (do not reboot after patching)"
             )
-            $schedule.RebootSetting = @("IfRequired", "AlwaysReboot", "NeverReboot")[$rebootChoice - 1]
+            $schedule.RebootSetting = @("IfRequired", "Always", "Never")[$rebootChoice - 1]
         } else {
             Write-Host ""
             Write-Host "  Note: Scope '$($schedule.MaintenanceScope)' does not use OS patching options" -ForegroundColor DarkGray
@@ -606,7 +607,12 @@ function New-PolicyAssignmentAtMG {
 
     Write-Log "  Creating policy assignment '$AssignmentName'..."
 
-    $policyDef = Get-AzPolicyDefinition -Id "/providers/Microsoft.Authorization/policyDefinitions/$PolicyDefinitionId" -ErrorAction Stop
+    $policyDef = Get-AzPolicyDefinition -Id "/providers/Microsoft.Authorization/policyDefinitions/$PolicyDefinitionId" -ErrorAction SilentlyContinue
+    if (-not $policyDef) {
+        Write-Log "  Policy definition ID '$PolicyDefinitionId' not found in this Azure environment." -Level ERROR
+        Write-Log "  This policy may not be available in Azure Government. Verify at https://aka.ms/AzGovPolicy" -Level ERROR
+        throw "Policy definition '$PolicyDefinitionId' not found. It may not be available in this Azure cloud."
+    }
 
     $assignParams = @{
         Name                   = $AssignmentName
@@ -678,8 +684,8 @@ function Set-AllPolicyAssignments {
         -ManagedIdentityLocation $Location
 
     # ── Patch Mode Prerequisites Policies ──
-    $prereqWindowsPolicyId = "9d0a794f-4ef1-45f6-9a3a-0ca77a7a85c2"
-    $prereqLinuxPolicyId   = "9d0a794f-4ef1-45f6-9a3a-0ca77a7a85c2"
+    $prereqWindowsPolicyId = "9905ca54-1471-49c6-8291-7582c04cd4d4"
+    $prereqLinuxPolicyId   = "9905ca54-1471-49c6-8291-7582c04cd4d4"
 
     # Windows prerequisites
     $assignments += New-PolicyAssignmentAtMG `
@@ -688,7 +694,7 @@ function Set-AllPolicyAssignments {
         -AssignmentName "aum-prereq-windows" `
         -DisplayName "AUM: Patch Prerequisites - Windows" `
         -Description "Sets prerequisites for scheduling recurring updates on Windows VMs." `
-        -Parameters @{ osType = "Windows" } `
+        -Parameters @{ operatingSystemTypes = @("Windows") } `
         -ManagedIdentityLocation $Location
 
     # Linux prerequisites
@@ -698,7 +704,7 @@ function Set-AllPolicyAssignments {
         -AssignmentName "aum-prereq-linux" `
         -DisplayName "AUM: Patch Prerequisites - Linux" `
         -Description "Sets prerequisites for scheduling recurring updates on Linux VMs." `
-        -Parameters @{ osType = "Linux" } `
+        -Parameters @{ operatingSystemTypes = @("Linux") } `
         -ManagedIdentityLocation $Location
 
     # ── Schedule Recurring Updates Policies ──
@@ -729,7 +735,7 @@ function Set-AllPolicyAssignments {
                 -Description "Schedules recurring updates for Windows VMs using maintenance config '$configName'." `
                 -Parameters @{
                     maintenanceConfigurationResourceId = $configId
-                    osType = "Windows"
+                    operatingSystemTypes = @("Windows")
                 } `
                 -ManagedIdentityLocation $Location
         }
@@ -747,7 +753,7 @@ function Set-AllPolicyAssignments {
                 -Description "Schedules recurring updates for Linux VMs using maintenance config '$configName'." `
                 -Parameters @{
                     maintenanceConfigurationResourceId = $configId
-                    osType = "Linux"
+                    operatingSystemTypes = @("Linux")
                 } `
                 -ManagedIdentityLocation $Location
         }
@@ -930,7 +936,6 @@ function Start-PolicyRemediations {
     )
 
     Write-Log "Triggering policy remediation tasks..."
-    $mgScope = "/providers/Microsoft.Management/managementGroups/$ManagementGroupName"
     $remediations = @()
 
     foreach ($assignment in $PolicyAssignments) {
@@ -946,8 +951,8 @@ function Start-PolicyRemediations {
             Write-Log "  Creating remediation '$remediationName' for assignment '$($assignment.Name)'..."
             $remediation = Start-AzPolicyRemediation `
                 -Name $remediationName `
-                -Scope $mgScope `
-                -PolicyAssignmentId $assignment.PolicyAssignmentId `
+                -ManagementGroupName $ManagementGroupName `
+                -PolicyAssignmentId $assignment.Id `
                 -ErrorAction Stop
             $remediations += $remediation
             Write-Log "  Remediation '$remediationName' started." -Level SUCCESS
