@@ -1251,7 +1251,7 @@ try {
         }
 
         if (-not $ManagementGroupName) {
-            $ManagementGroupName = Read-RequiredInput "Enter the Management Group name"
+            $ManagementGroupName = Read-RequiredInput "Enter the Management Group ID (not the display name)"
         }
         if (-not $SubscriptionId) {
             $SubscriptionId = Read-RequiredInput "Enter the Subscription ID for maintenance configurations"
