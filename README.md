@@ -184,7 +184,11 @@ The wizard prompts you to choose authentication method. For interactive login, a
 
 ```powershell
 .\Configure-AzureUpdateManager.ps1 -TenantId "xxx" -AppId "yyy"
-# The script prompts for AppSecret securely
+# The script prompts for AppSecret securely via Read-Host -AsSecureString
+
+# Or pass AppSecret programmatically (e.g., from a pipeline secret):
+$secret = ConvertTo-SecureString "your-secret" -AsPlainText -Force
+.\Configure-AzureUpdateManager.ps1 -TenantId "xxx" -AppId "yyy" -AppSecret $secret
 ```
 
 **Required RBAC roles at the management group scope (both methods):**
