@@ -483,6 +483,25 @@ The script is **idempotent** — safe to re-run:
 | Weekly | `Week <days>` | `Week Saturday` or `Week Monday,Wednesday` |
 | Monthly | `Month <week> <day>` | `Month Third Saturday` or `Month Last Friday` |
 
+### Timezone
+
+The `Timezone` field requires a **full Windows time zone name** — abbreviations like `EST` or `PST` are not valid.
+
+| ✅ Valid | ❌ Invalid |
+|---|---|
+| `Eastern Standard Time` | `EST` |
+| `Pacific Standard Time` | `PST` |
+| `UTC` | `ET` |
+| `Central Standard Time` | `CST` |
+
+To list all valid timezone IDs on your system:
+
+```powershell
+[System.TimeZoneInfo]::GetSystemTimeZones() | Select-Object Id, DisplayName
+```
+
+> **Note:** Each maintenance schedule can use a different timezone. For example, Windows patching at `Eastern Standard Time` and Linux patching at `UTC` in the same config file is valid.
+
 ### Dynamic Scope Filters
 
 | Filter | Required | Description |
@@ -604,7 +623,7 @@ Full example for non-interactive mode:
 | `MaintenanceSchedules[].RecurEvery` | string | ✓ | Recurrence pattern |
 | `MaintenanceSchedules[].StartDateTime` | string | ✓ | `YYYY-MM-DD HH:MM` |
 | `MaintenanceSchedules[].Duration` | string | ✓ | `HH:MM` |
-| `MaintenanceSchedules[].Timezone` | string | ✓ | Windows timezone name |
+| `MaintenanceSchedules[].Timezone` | string | ✓ | Full Windows timezone name (e.g., `Eastern Standard Time`, `UTC` — not abbreviations like `EST`) |
 | `MaintenanceSchedules[].PreTask` | string | | Pre-patching script URI |
 | `MaintenanceSchedules[].PostTask` | string | | Post-patching script URI |
 | `MaintenanceSchedules[].DynamicScopes` | array | | Dynamic scope definitions |
