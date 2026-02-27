@@ -693,6 +693,12 @@ function New-PolicyAssignmentAtMG {
         }
     }
 
+    # Management group scope policy assignment names are limited to 24 characters
+    if ($AssignmentName.Length -gt 24) {
+        Write-Log "  Assignment name '$AssignmentName' exceeds 24-char MG limit. Truncating." -Level WARN
+        $AssignmentName = $AssignmentName.Substring(0, 24)
+    }
+
     Write-Log "  Creating policy assignment '$AssignmentName'..."
 
     $policyDef = Get-AzPolicyDefinition -Id $fullPolicyDefId -ErrorAction SilentlyContinue
@@ -812,7 +818,7 @@ function Set-AllPolicyAssignments {
             $assignments += New-PolicyAssignmentAtMG `
                 -ManagementGroupName $ManagementGroupName `
                 -PolicyDefinitionId $schedulePolicyId `
-                -AssignmentName "aum-sched-win-$($configName.Substring(0, [Math]::Min(20, $configName.Length)))" `
+                -AssignmentName "aum-sw-$($configName.Substring(0, [Math]::Min(17, $configName.Length)))" `
                 -DisplayName "AUM: Schedule Updates - Windows ($configName)" `
                 -Description "Schedules recurring updates for Windows VMs using maintenance config '$configName'." `
                 -Parameters @{
@@ -831,7 +837,7 @@ function Set-AllPolicyAssignments {
             $assignments += New-PolicyAssignmentAtMG `
                 -ManagementGroupName $ManagementGroupName `
                 -PolicyDefinitionId $schedulePolicyId `
-                -AssignmentName "aum-sched-lnx-$($configName.Substring(0, [Math]::Min(20, $configName.Length)))" `
+                -AssignmentName "aum-sl-$($configName.Substring(0, [Math]::Min(17, $configName.Length)))" `
                 -DisplayName "AUM: Schedule Updates - Linux ($configName)" `
                 -Description "Schedules recurring updates for Linux VMs using maintenance config '$configName'." `
                 -Parameters @{
