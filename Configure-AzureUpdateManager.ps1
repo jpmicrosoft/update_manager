@@ -642,21 +642,43 @@ function New-PolicyAssignmentAtMG {
         [string]$DisplayName,
         [hashtable]$Parameters = @{},
         [string]$Description = "",
-        [string]$ManagedIdentityLocation
+        [string]$ManagedIdentityLocation,
+        [array]$ExistingAssignments = @()
     )
 
     $mgScope = "/providers/Microsoft.Management/managementGroups/$ManagementGroupName"
+    $fullPolicyDefId = "/providers/Microsoft.Authorization/policyDefinitions/$PolicyDefinitionId"
 
-    # Check for existing assignment
-    $existing = Get-AzPolicyAssignment -Name $AssignmentName -Scope $mgScope -ErrorAction SilentlyContinue
+    # Check for existing assignment by name
+    $existing = $ExistingAssignments | Where-Object { $_.Name -eq $AssignmentName }
     if ($existing) {
         Write-Log "  Policy assignment '$AssignmentName' already exists. Skipping." -Level INFO
-        return $existing
+        return $existing[0]
+    }
+
+    # Check for existing assignment by policy definition ID + matching parameters
+    # (catches externally-created assignments with different names)
+    $existingByDef = $ExistingAssignments | Where-Object { $_.PolicyDefinitionId -eq $fullPolicyDefId }
+    foreach ($candidate in $existingByDef) {
+        $paramsMatch = $true
+        foreach ($key in $Parameters.Keys) {
+            $candidateVal = $candidate.Parameter[$key].Value
+            $expectedVal = $Parameters[$key]
+            if ($candidateVal -is [array] -and $expectedVal -is [array]) {
+                if (Compare-Object $candidateVal $expectedVal) { $paramsMatch = $false; break }
+            } elseif ("$candidateVal" -ne "$expectedVal") {
+                $paramsMatch = $false; break
+            }
+        }
+        if ($paramsMatch) {
+            Write-Log "  Policy definition '$PolicyDefinitionId' with matching parameters already assigned as '$($candidate.Name)'. Skipping." -Level WARN
+            return $candidate
+        }
     }
 
     Write-Log "  Creating policy assignment '$AssignmentName'..."
 
-    $policyDef = Get-AzPolicyDefinition -Id "/providers/Microsoft.Authorization/policyDefinitions/$PolicyDefinitionId" -ErrorAction SilentlyContinue
+    $policyDef = Get-AzPolicyDefinition -Id $fullPolicyDefId -ErrorAction SilentlyContinue
     if (-not $policyDef) {
         Write-Log "  Policy definition ID '$PolicyDefinitionId' not found in this Azure environment." -Level ERROR
         Write-Log "  This policy may not be available in Azure Government. Verify at https://aka.ms/AzGovPolicy" -Level ERROR
@@ -692,6 +714,11 @@ function Set-AllPolicyAssignments {
 
     Write-Log "Creating Azure Policy assignments at management group scope..."
 
+    $mgScope = "/providers/Microsoft.Management/managementGroups/$ManagementGroupName"
+    Write-Log "  Fetching existing policy assignments at scope..."
+    $existingAssignments = @(Get-AzPolicyAssignment -Scope $mgScope -ErrorAction SilentlyContinue)
+    Write-Log "  Found $($existingAssignments.Count) existing assignment(s)." -Level INFO
+
     $assignments = @()
 
     # ── Periodic Assessment Policies ──
@@ -705,7 +732,8 @@ function Set-AllPolicyAssignments {
         -DisplayName "AUM: Periodic Assessment - Windows" `
         -Description "Configures periodic checking for missing system updates on Windows VMs." `
         -Parameters @{ osType = "Windows"; assessmentMode = "AutomaticByPlatform" } `
-        -ManagedIdentityLocation $Location
+        -ManagedIdentityLocation $Location `
+        -ExistingAssignments $existingAssignments
 
     # Linux assessment
     $assignments += New-PolicyAssignmentAtMG `
@@ -715,7 +743,8 @@ function Set-AllPolicyAssignments {
         -DisplayName "AUM: Periodic Assessment - Linux" `
         -Description "Configures periodic checking for missing system updates on Linux VMs." `
         -Parameters @{ osType = "Linux"; assessmentMode = "AutomaticByPlatform" } `
-        -ManagedIdentityLocation $Location
+        -ManagedIdentityLocation $Location `
+        -ExistingAssignments $existingAssignments
 
     # ── Patch Mode Prerequisites Policies ──
     $prereqWindowsPolicyId = "9905ca54-1471-49c6-8291-7582c04cd4d4"
@@ -729,7 +758,8 @@ function Set-AllPolicyAssignments {
         -DisplayName "AUM: Patch Prerequisites - Windows" `
         -Description "Sets prerequisites for scheduling recurring updates on Windows VMs." `
         -Parameters @{ operatingSystemTypes = @("Windows") } `
-        -ManagedIdentityLocation $Location
+        -ManagedIdentityLocation $Location `
+        -ExistingAssignments $existingAssignments
 
     # Linux prerequisites
     $assignments += New-PolicyAssignmentAtMG `
@@ -739,7 +769,8 @@ function Set-AllPolicyAssignments {
         -DisplayName "AUM: Patch Prerequisites - Linux" `
         -Description "Sets prerequisites for scheduling recurring updates on Linux VMs." `
         -Parameters @{ operatingSystemTypes = @("Linux") } `
-        -ManagedIdentityLocation $Location
+        -ManagedIdentityLocation $Location `
+        -ExistingAssignments $existingAssignments
 
     # ── Schedule Recurring Updates Policies ──
     $schedulePolicyId = "ba0df93e-e4ac-479a-aac2-134bbae39a1a"
@@ -771,7 +802,8 @@ function Set-AllPolicyAssignments {
                     maintenanceConfigurationResourceId = $configId
                     operatingSystemTypes = @("Windows")
                 } `
-                -ManagedIdentityLocation $Location
+                -ManagedIdentityLocation $Location `
+                -ExistingAssignments $existingAssignments
         }
     }
 
@@ -789,7 +821,8 @@ function Set-AllPolicyAssignments {
                     maintenanceConfigurationResourceId = $configId
                     operatingSystemTypes = @("Linux")
                 } `
-                -ManagedIdentityLocation $Location
+                -ManagedIdentityLocation $Location `
+                -ExistingAssignments $existingAssignments
         }
     }
 
