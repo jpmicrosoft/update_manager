@@ -671,7 +671,7 @@ function New-PolicyAssignmentAtMG {
     if ($existing) {
         Write-Log "  Policy assignment '$AssignmentName' already exists. Skipping." -Level INFO
         # Re-fetch to ensure Identity property is populated
-        $full = Get-AzPolicyAssignment -Id $existing[0].PolicyAssignmentId -ErrorAction SilentlyContinue
+        $full = Get-AzPolicyAssignment -Id $existing[0].Id -ErrorAction SilentlyContinue
         return $(if ($full) { $full } else { $existing[0] })
     }
 
@@ -691,7 +691,7 @@ function New-PolicyAssignmentAtMG {
         }
         if ($paramsMatch) {
             Write-Log "  Policy definition '$PolicyDefinitionId' with matching parameters already assigned as '$($candidate.Name)'. Skipping." -Level WARN
-            $full = Get-AzPolicyAssignment -Id $candidate.PolicyAssignmentId -ErrorAction SilentlyContinue
+            $full = Get-AzPolicyAssignment -Id $candidate.Id -ErrorAction SilentlyContinue
             return $(if ($full) { $full } else { $candidate })
         }
     }
