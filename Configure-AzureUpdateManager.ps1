@@ -4,12 +4,13 @@
 
 .DESCRIPTION
     This script performs end-to-end configuration of Azure Update Manager including:
-    - SPN authentication to Azure Government
-    - Resource provider registration across all subscriptions under a management group
+    - Authentication to Azure Government (interactive user login or SPN)
+    - Optional resource provider registration across subscriptions under a management group
     - Azure Policy assignments (periodic assessment, patch mode prerequisites, scheduled updates) per OS
     - Maintenance configuration creation with full options (classifications, KB/package filters, reboot, pre/post tasks)
     - Dynamic scope assignments for cross-subscription patching
-    - Policy remediation tasks for existing non-compliant VMs
+    - Identity report for managed identity RBAC handoff to identity team
+    - Optional policy remediation tasks for existing non-compliant VMs
     
     Supports two modes:
     - Interactive wizard (default): Guides the user through menus for each setting
@@ -28,10 +29,10 @@
     Azure AD tenant ID. Prompted if not supplied.
 
 .PARAMETER AppId
-    SPN Application (client) ID. Prompted if not supplied.
+    SPN Application (client) ID. Required only when using SPN authentication.
 
 .PARAMETER AppSecret
-    SPN client secret as a SecureString. Prompted securely if not supplied.
+    SPN client secret as a SecureString. Required only when using SPN authentication.
 
 .PARAMETER Location
     Azure region for maintenance configurations (e.g., usgovvirginia). Prompted if not supplied.
@@ -39,13 +40,29 @@
 .PARAMETER ConfigFile
     Optional path to a JSON configuration file for non-interactive mode.
 
+.PARAMETER RegisterProviders
+    Switch to enable resource provider registration (Microsoft.Maintenance, Microsoft.GuestConfiguration)
+    across all subscriptions under the management group. Skipped by default.
+
+.PARAMETER RunRemediation
+    Switch to trigger policy remediation tasks after assignments are created.
+    Skipped by default because managed identity RBAC must be assigned first by the identity team.
+
 .EXAMPLE
-    # Interactive mode
+    # Interactive mode with user login
+    .\Configure-AzureUpdateManager.ps1
+
+.EXAMPLE
+    # Interactive mode with SPN
     .\Configure-AzureUpdateManager.ps1 -TenantId "xxx" -AppId "yyy"
 
 .EXAMPLE
     # Non-interactive mode
     .\Configure-AzureUpdateManager.ps1 -ConfigFile ".\config.json"
+
+.EXAMPLE
+    # With optional provider registration and remediation
+    .\Configure-AzureUpdateManager.ps1 -RegisterProviders -RunRemediation
 #>
 
 [CmdletBinding()]
@@ -72,7 +89,13 @@ param(
     [string]$Location,
 
     [Parameter()]
-    [string]$ConfigFile
+    [string]$ConfigFile,
+
+    [Parameter()]
+    [switch]$RegisterProviders,
+
+    [Parameter()]
+    [switch]$RunRemediation
 )
 
 Set-StrictMode -Version Latest
@@ -242,14 +265,31 @@ function Connect-AzureGov {
         [string]$AppId,
         [System.Security.SecureString]$AppSecret
     )
-    Write-Log "Authenticating to Azure Government with SPN..."
-    $credential = New-Object System.Management.Automation.PSCredential($AppId, $AppSecret)
-    Connect-AzAccount `
-        -Environment AzureUSGovernment `
-        -ServicePrincipal `
-        -TenantId $TenantId `
-        -Credential $credential `
-        -WarningAction SilentlyContinue | Out-Null
+
+    if ($AppId -and $AppSecret) {
+        if (-not $TenantId) {
+            throw "TenantId is required when using SPN authentication."
+        }
+        Write-Log "Authenticating to Azure Government with SPN..."
+        $credential = New-Object System.Management.Automation.PSCredential($AppId, $AppSecret)
+        $connectParams = @{
+            Environment      = 'AzureUSGovernment'
+            ServicePrincipal = $true
+            TenantId         = $TenantId
+            Credential       = $credential
+            WarningAction    = 'SilentlyContinue'
+        }
+        Connect-AzAccount @connectParams | Out-Null
+    } else {
+        Write-Log "Authenticating to Azure Government with interactive user login..."
+        $connectParams = @{
+            Environment   = 'AzureUSGovernment'
+            WarningAction = 'SilentlyContinue'
+        }
+        if ($TenantId) { $connectParams['TenantId'] = $TenantId }
+        Connect-AzAccount @connectParams | Out-Null
+    }
+
     $ctx = Get-AzContext
     Write-Log "Authenticated as '$($ctx.Account.Id)' in tenant '$($ctx.Tenant.Id)'" -Level SUCCESS
 }
@@ -505,7 +545,7 @@ function Import-ConfigFile {
     $config = Get-Content -Path $Path -Raw | ConvertFrom-Json -ErrorAction Stop
 
     # Validate required top-level fields
-    $required = @('ManagementGroupName', 'SubscriptionId', 'ResourceGroupName', 'TenantId', 'AppId', 'Location', 'MaintenanceSchedules')
+    $required = @('ManagementGroupName', 'SubscriptionId', 'ResourceGroupName', 'Location', 'MaintenanceSchedules')
     foreach ($field in $required) {
         if (-not $config.PSObject.Properties[$field]) {
             throw "Config file missing required field: '$field'"
@@ -570,14 +610,17 @@ function Import-ConfigFile {
     Write-Log "Loaded $($schedules.Count) maintenance schedule(s) from config file." -Level SUCCESS
 
     return @{
-        ManagementGroupName = $config.ManagementGroupName
-        SubscriptionId      = $config.SubscriptionId
-        ResourceGroupName   = $config.ResourceGroupName
-        TenantId            = $config.TenantId
-        AppId               = $config.AppId
-        AppSecret           = $config.AppSecret
-        Location            = $config.Location
-        Schedules           = $schedules
+        ManagementGroupName  = $config.ManagementGroupName
+        SubscriptionId       = $config.SubscriptionId
+        ResourceGroupName    = $config.ResourceGroupName
+        TenantId             = if ($config.PSObject.Properties['TenantId']) { $config.TenantId } else { "" }
+        AppId                = if ($config.PSObject.Properties['AppId']) { $config.AppId } else { "" }
+        AppSecret            = if ($config.PSObject.Properties['AppSecret']) { $config.AppSecret } else { "" }
+        Location             = $config.Location
+        Schedules            = $schedules
+        CreateResourceGroup  = if ($config.PSObject.Properties['CreateResourceGroup']) { $config.CreateResourceGroup } else { $false }
+        RegisterProviders    = if ($config.PSObject.Properties['RegisterProviders']) { $config.RegisterProviders } else { $false }
+        RunRemediation       = if ($config.PSObject.Properties['RunRemediation']) { $config.RunRemediation } else { $false }
     }
 }
 
@@ -630,21 +673,6 @@ function New-PolicyAssignmentAtMG {
 
     $assignment = New-AzPolicyAssignment @assignParams -ErrorAction Stop
     Write-Log "  Policy assignment '$AssignmentName' created." -Level SUCCESS
-
-    # Assign RBAC roles to the managed identity for DeployIfNotExists
-    if ($assignment.Identity -and $assignment.Identity.PrincipalId) {
-        $principalId = $assignment.Identity.PrincipalId
-        $rolesNeeded = @(
-            "b24988ac-6180-42a0-ab88-20f7382dd24c"  # Contributor
-        )
-        foreach ($roleId in $rolesNeeded) {
-            $existingRole = Get-AzRoleAssignment -ObjectId $principalId -Scope $mgScope -RoleDefinitionId $roleId -ErrorAction SilentlyContinue
-            if (-not $existingRole) {
-                New-AzRoleAssignment -ObjectId $principalId -Scope $mgScope -RoleDefinitionId $roleId -ErrorAction SilentlyContinue | Out-Null
-                Write-Log "    Assigned Contributor role to managed identity '$principalId'." -Level INFO
-            }
-        }
-    }
 
     return $assignment
 }
@@ -772,18 +800,25 @@ function New-MaintenanceConfigurations {
         [string]$SubscriptionId,
         [string]$ResourceGroupName,
         [string]$Location,
-        [array]$Schedules
+        [array]$Schedules,
+        [bool]$CreateResourceGroup = $false
     )
 
     Set-AzContext -SubscriptionId $SubscriptionId -WarningAction SilentlyContinue | Out-Null
     Write-Log "Creating maintenance configurations in subscription '$SubscriptionId', RG '$ResourceGroupName'..."
 
-    # Ensure resource group exists
+    # Validate or create resource group
     $rg = Get-AzResourceGroup -Name $ResourceGroupName -ErrorAction SilentlyContinue
     if (-not $rg) {
-        Write-Log "  Resource group '$ResourceGroupName' not found. Creating..." -Level INFO
-        New-AzResourceGroup -Name $ResourceGroupName -Location $Location -ErrorAction Stop | Out-Null
-        Write-Log "  Resource group '$ResourceGroupName' created." -Level SUCCESS
+        if ($CreateResourceGroup) {
+            Write-Log "  Resource group '$ResourceGroupName' not found. Creating..." -Level INFO
+            New-AzResourceGroup -Name $ResourceGroupName -Location $Location -ErrorAction Stop | Out-Null
+            Write-Log "  Resource group '$ResourceGroupName' created." -Level SUCCESS
+        } else {
+            throw "Resource group '$ResourceGroupName' does not exist. Use 'Create new' option in the wizard or set 'CreateResourceGroup' to true in the config file."
+        }
+    } else {
+        Write-Log "  Validated resource group '$ResourceGroupName' exists." -Level SUCCESS
     }
 
     $createdConfigs = @()
@@ -967,6 +1002,73 @@ function Start-PolicyRemediations {
 
 #endregion
 
+#region ── Identity Report ──
+
+function Export-IdentityReport {
+    param(
+        [array]$PolicyAssignments,
+        [string]$ManagementGroupName,
+        [string]$OutputPath = ".\identity-rbac-report.csv"
+    )
+
+    $mgScope = "/providers/Microsoft.Management/managementGroups/$ManagementGroupName"
+    $report = @()
+
+    foreach ($assignment in $PolicyAssignments) {
+        if (-not $assignment -or -not $assignment.Identity -or -not $assignment.Identity.PrincipalId) {
+            continue
+        }
+        $report += [PSCustomObject]@{
+            AssignmentName  = $assignment.Name
+            DisplayName     = $assignment.DisplayName
+            PrincipalId     = $assignment.Identity.PrincipalId
+            IdentityType    = "SystemAssigned"
+            RequiredRole    = "Contributor"
+            RoleDefinitionId = "b24988ac-6180-42a0-ab88-20f7382dd24c"
+            Scope           = $mgScope
+            Status          = "RBAC NOT ASSIGNED — identity team action required"
+        }
+    }
+
+    if ($report.Count -eq 0) {
+        Write-Log "No managed identities found in policy assignments." -Level WARN
+        return @()
+    }
+
+    # Console output
+    Write-Host ""
+    Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Magenta
+    Write-Host "║              Identity Team RBAC Handoff Report              ║" -ForegroundColor Magenta
+    Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Magenta
+    Write-Host ""
+    Write-Host "  The following managed identities were auto-created by Azure" -ForegroundColor Yellow
+    Write-Host "  for DINE policy assignments. They require Contributor role" -ForegroundColor Yellow
+    Write-Host "  at the management group scope to perform remediation." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  Scope: $mgScope" -ForegroundColor Cyan
+    Write-Host "  Required Role: Contributor (b24988ac-6180-42a0-ab88-20f7382dd24c)" -ForegroundColor Cyan
+    Write-Host ""
+
+    foreach ($entry in $report) {
+        Write-Host "  ┌─ $($entry.DisplayName)" -ForegroundColor White
+        Write-Host "  │  Assignment: $($entry.AssignmentName)" -ForegroundColor Gray
+        Write-Host "  │  Principal ID: $($entry.PrincipalId)" -ForegroundColor Gray
+        Write-Host "  └─ Status: $($entry.Status)" -ForegroundColor Yellow
+        Write-Host ""
+    }
+
+    # Export CSV
+    $report | Export-Csv -Path $OutputPath -NoTypeInformation -Force
+    Write-Log "Identity report exported to '$OutputPath'" -Level SUCCESS
+    Write-Host "  ⚠  Remediation tasks will fail until Contributor role is assigned." -ForegroundColor Yellow
+    Write-Host "  ⚠  RBAC propagation typically takes 5-10 minutes after assignment." -ForegroundColor Yellow
+    Write-Host ""
+
+    return $report
+}
+
+#endregion
+
 #region ── Validation Summary ──
 
 function Show-ValidationSummary {
@@ -975,7 +1077,8 @@ function Show-ValidationSummary {
         [array]$PolicyAssignments,
         [array]$MaintenanceConfigs,
         [array]$DynamicScopes,
-        [array]$Remediations
+        [array]$Remediations,
+        [array]$IdentityReport
     )
 
     Write-Host ""
@@ -991,7 +1094,7 @@ function Show-ValidationSummary {
             Write-Host "    [$($r.SubscriptionId)] $($r.Provider): $($r.Status)"
         }
     } else {
-        Write-Host "    None (or already registered)"
+        Write-Host "    Skipped (use -RegisterProviders to enable)"
     }
     Write-Host ""
 
@@ -1034,7 +1137,17 @@ function Show-ValidationSummary {
             Write-Host "    ✓ $($r.Name) — $($r.ProvisioningState)" -ForegroundColor Green
         }
     } else {
-        Write-Host "    None started"
+        Write-Host "    Skipped (use -RunRemediation to enable after RBAC is assigned)"
+    }
+    Write-Host ""
+
+    # Identity Report
+    Write-Host "  Managed Identity RBAC Handoff:" -ForegroundColor Yellow
+    if ($IdentityReport -and $IdentityReport.Count -gt 0) {
+        Write-Host "    $($IdentityReport.Count) managed identity(ies) require Contributor role" -ForegroundColor Yellow
+        Write-Host "    See identity-rbac-report.csv for details" -ForegroundColor Cyan
+    } else {
+        Write-Host "    No managed identities created"
     }
     Write-Host ""
     Write-Host "  ════════════════════════════════════════════════════════════" -ForegroundColor Green
@@ -1050,6 +1163,7 @@ try {
     Assert-RequiredModules
 
     $schedules = @()
+    $createRG = $false
 
     if ($ConfigFile) {
         # ── Non-Interactive Mode ──
@@ -1061,10 +1175,13 @@ try {
         $AppId               = $config.AppId
         $Location            = $config.Location
         $schedules           = $config.Schedules
+        $createRG            = $config.CreateResourceGroup
 
         if ($config.AppSecret) {
             $AppSecret = ConvertTo-SecureString $config.AppSecret -AsPlainText -Force
         }
+        if ($config.RegisterProviders) { $RegisterProviders = [switch]::new($true) }
+        if ($config.RunRemediation)    { $RunRemediation = [switch]::new($true) }
     } else {
         # ── Interactive Mode: prompt for missing parameters ──
         if (-not $ManagementGroupName) {
@@ -1073,18 +1190,46 @@ try {
         if (-not $SubscriptionId) {
             $SubscriptionId = Read-RequiredInput "Enter the Subscription ID for maintenance configurations"
         }
-        if (-not $ResourceGroupName) {
-            $ResourceGroupName = Read-RequiredInput "Enter the Resource Group name for maintenance configurations"
+
+        # Resource Group: create new or use existing
+        $rgChoice = Show-Menu -Title "Resource Group" -Options @(
+            "Use an existing resource group",
+            "Create a new resource group"
+        )
+        if ($rgChoice -eq 2) {
+            $createRG = $true
+            if (-not $ResourceGroupName) {
+                $ResourceGroupName = Read-RequiredInput "Enter the new Resource Group name"
+            }
+        } else {
+            if (-not $ResourceGroupName) {
+                $ResourceGroupName = Read-RequiredInput "Enter the existing Resource Group name"
+            }
         }
-        if (-not $TenantId) {
-            $TenantId = Read-RequiredInput "Enter the Azure AD Tenant ID"
+
+        # Authentication method
+        $authChoice = Show-Menu -Title "Authentication Method" -Options @(
+            "Interactive user login (browser-based)",
+            "Service Principal (SPN)"
+        )
+        if ($authChoice -eq 2) {
+            if (-not $TenantId) {
+                $TenantId = Read-RequiredInput "Enter the Azure AD Tenant ID"
+            }
+            if (-not $AppId) {
+                $AppId = Read-RequiredInput "Enter the SPN Application (Client) ID"
+            }
+            if (-not $AppSecret) {
+                $AppSecret = Read-Host "  Enter the SPN Client Secret" -AsSecureString
+            }
+        } else {
+            if (-not $TenantId) {
+                Write-Host "  Tenant ID is optional for interactive login (Azure will prompt if needed)." -ForegroundColor Gray
+                $tenantInput = Read-Host "  Enter the Azure AD Tenant ID (or press Enter to skip)"
+                if ($tenantInput) { $TenantId = $tenantInput }
+            }
         }
-        if (-not $AppId) {
-            $AppId = Read-RequiredInput "Enter the SPN Application (Client) ID"
-        }
-        if (-not $AppSecret) {
-            $AppSecret = Read-Host "  Enter the SPN Client Secret" -AsSecureString
-        }
+
         if (-not $Location) {
             $locChoice = Show-Menu -Title "Azure Government Region" -Options @(
                 "usgovvirginia",
@@ -1100,8 +1245,13 @@ try {
     # Phase 1: Authenticate
     Connect-AzureGov -TenantId $TenantId -AppId $AppId -AppSecret $AppSecret
 
-    # Phase 2: Register Resource Providers
-    $providerResults = Register-RequiredProviders -ManagementGroupName $ManagementGroupName
+    # Phase 2: Register Resource Providers (optional)
+    $providerResults = @()
+    if ($RegisterProviders) {
+        $providerResults = Register-RequiredProviders -ManagementGroupName $ManagementGroupName
+    } else {
+        Write-Log "Skipping resource provider registration (use -RegisterProviders to enable)." -Level INFO
+    }
 
     # Phase 3: Build schedules (interactive or already loaded from config)
     if (-not $ConfigFile) {
@@ -1113,7 +1263,8 @@ try {
         -SubscriptionId $SubscriptionId `
         -ResourceGroupName $ResourceGroupName `
         -Location $Location `
-        -Schedules $schedules
+        -Schedules $schedules `
+        -CreateResourceGroup $createRG
 
     # Phase 5: Create Dynamic Scopes
     $dynamicScopes = New-DynamicScopeAssignments -Schedules $schedules
@@ -1125,18 +1276,29 @@ try {
         -Location $Location `
         -Schedules $schedules
 
-    # Phase 7: Trigger Remediations
-    $remediations = Start-PolicyRemediations `
-        -ManagementGroupName $ManagementGroupName `
-        -PolicyAssignments $policyAssignments
+    # Phase 7: Identity Report (always generated for identity team handoff)
+    $identityReport = Export-IdentityReport `
+        -PolicyAssignments $policyAssignments `
+        -ManagementGroupName $ManagementGroupName
 
-    # Phase 8: Validation Summary
+    # Phase 8: Trigger Remediations (optional — requires RBAC on managed identities)
+    $remediations = @()
+    if ($RunRemediation) {
+        $remediations = Start-PolicyRemediations `
+            -ManagementGroupName $ManagementGroupName `
+            -PolicyAssignments $policyAssignments
+    } else {
+        Write-Log "Skipping remediation (use -RunRemediation after identity team assigns RBAC)." -Level INFO
+    }
+
+    # Phase 9: Validation Summary
     Show-ValidationSummary `
         -ProviderResults $providerResults `
         -PolicyAssignments $policyAssignments `
         -MaintenanceConfigs $maintenanceConfigs `
         -DynamicScopes $dynamicScopes `
-        -Remediations $remediations
+        -Remediations $remediations `
+        -IdentityReport $identityReport
 
 } catch {
     Write-Log "FATAL: $_" -Level ERROR

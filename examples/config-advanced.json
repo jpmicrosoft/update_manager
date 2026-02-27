@@ -4,8 +4,11 @@
   "ResourceGroupName": "rg-update-manager",
   "TenantId": "00000000-0000-0000-0000-000000000002",
   "AppId": "00000000-0000-0000-0000-000000000003",
-  "AppSecret": "your-client-secret-here",
+  "AppSecret": "<YOUR_CLIENT_SECRET>",
   "Location": "usgovvirginia",
+  "CreateResourceGroup": true,
+  "RegisterProviders": true,
+  "RunRemediation": false,
   "MaintenanceSchedules": [
     {
       "_comment": "Production Windows servers — critical/security only, weekly Saturday 2AM ET",

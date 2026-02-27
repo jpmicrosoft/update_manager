@@ -1,6 +1,6 @@
 # Azure Update Manager — Greenfield Configuration Script
 
-Automated end-to-end configuration of Azure Update Manager for patching in **Azure Government** environments. This PowerShell script handles SPN authentication, resource provider registration, Azure Policy assignments, maintenance configuration creation with full patching options, dynamic scoping, and policy remediation — all through an interactive wizard or a JSON config file.
+Automated end-to-end configuration of Azure Update Manager for patching in **Azure Government** environments. This PowerShell script handles authentication (interactive user or SPN), Azure Policy assignments, maintenance configuration creation with full patching options, dynamic scoping, and managed identity RBAC reporting — all through an interactive wizard or a JSON config file.
 
 ---
 
@@ -13,9 +13,11 @@ Automated end-to-end configuration of Azure Update Manager for patching in **Azu
 - [How-To Guide](#how-to-guide)
   - [Quick Start (Interactive Mode)](#quick-start-interactive-mode)
   - [Non-Interactive Mode (JSON Config)](#non-interactive-mode-json-config)
-  - [SPN Authentication](#spn-authentication)
+  - [Authentication](#authentication)
   - [Creating Maintenance Schedules](#creating-maintenance-schedules)
   - [Dynamic Scopes](#dynamic-scopes)
+  - [Identity Team RBAC Handoff](#identity-team-rbac-handoff)
+  - [Running Remediation](#running-remediation)
   - [Re-running the Script](#re-running-the-script)
 - [Parameter Reference](#parameter-reference)
 - [Maintenance Config Options Reference](#maintenance-config-options-reference)
@@ -29,14 +31,16 @@ Automated end-to-end configuration of Azure Update Manager for patching in **Azu
 
 This script configures the following Azure Update Manager components:
 
-1. **Resource Provider Registration** — Registers `Microsoft.Maintenance` and `Microsoft.GuestConfiguration` across all subscriptions under a management group
-2. **Azure Policy Assignments** (6 total, per OS):
+1. **Authentication** — Interactive user login or SPN authentication to Azure Government
+2. **Resource Provider Registration** *(optional)* — Registers `Microsoft.Maintenance` and `Microsoft.GuestConfiguration` across all subscriptions under a management group
+3. **Azure Policy Assignments** (6 total, per OS):
    - **Periodic Assessment** — Enables automatic checking for missing updates (Windows + Linux)
    - **Patch Mode Prerequisites** — Sets VM patch orchestration to `AutomaticByPlatform` (Windows + Linux)
    - **Schedule Recurring Updates** — Links maintenance configurations to VMs via policy (Windows + Linux)
-3. **Maintenance Configurations** — Patch schedules with full control over classifications, KB/package filters, reboot behavior, recurrence, and pre/post tasks
-4. **Dynamic Scope Assignments** — Cross-subscription targeting of VMs by subscription, resource group, location, OS type, and tags
-5. **Policy Remediation Tasks** — Applies settings to existing non-compliant VMs
+4. **Maintenance Configurations** — Patch schedules with full control over classifications, KB/package filters, reboot behavior, recurrence, and pre/post tasks
+5. **Dynamic Scope Assignments** — Cross-subscription targeting of VMs by subscription, resource group, location, OS type, and tags
+6. **Identity Report** — Exports managed identity principal IDs and required RBAC for identity team handoff
+7. **Policy Remediation Tasks** *(optional)* — Applies settings to existing non-compliant VMs (requires managed identity RBAC first)
 
 ---
 
@@ -78,10 +82,17 @@ Management Group (policy scope)
 ### Azure Requirements
 
 - **Azure Government subscription(s)** under a management group
-- **Service Principal (SPN)** with the following RBAC roles assigned at the **management group** scope:
-  - `Contributor` — to create maintenance configs, register providers, manage policy identities
-  - `Resource Policy Contributor` — to create and manage policy assignments
+- **Deploying identity** (user account or SPN) with the following RBAC roles at the **management group** scope:
+
+  | Role | Role Definition ID | Purpose |
+  |---|---|---|
+  | `Resource Policy Contributor` | `36243c78-bf99-498c-9df9-86d9f8d28608` | Create/manage policy assignments and remediation tasks |
+  | `Scheduled Patching Contributor` | `cd08ab90-6b14-449c-ad9a-8f8e549482c6` | Create maintenance configs and dynamic scope assignments |
+
+  > **Note:** If creating a new resource group, the deploying identity also needs `Contributor` (or a role with `Microsoft.Resources/subscriptions/resourceGroups/write`) on the target subscription.
+
 - **Management Group** containing the target subscriptions
+- **Post-deployment:** The identity team must assign **Contributor** role to the auto-created policy managed identities (the script outputs the principal IDs). See [Identity Team RBAC Handoff](#identity-team-rbac-handoff).
 
 ### Network Requirements
 
@@ -121,6 +132,14 @@ The simplest way to run the script — it will prompt you for everything:
 Or provide some parameters upfront and let the wizard handle the rest:
 
 ```powershell
+# Using interactive user login
+.\Configure-AzureUpdateManager.ps1 `
+    -ManagementGroupName "MyManagementGroup" `
+    -SubscriptionId "sub-id-for-configs" `
+    -ResourceGroupName "rg-update-manager" `
+    -Location "usgovvirginia"
+
+# Using SPN authentication
 .\Configure-AzureUpdateManager.ps1 `
     -TenantId "your-tenant-id" `
     -AppId "your-spn-app-id" `
@@ -131,11 +150,12 @@ Or provide some parameters upfront and let the wizard handle the rest:
 ```
 
 The script will:
-1. Authenticate with your SPN
-2. Register resource providers across all subscriptions
+1. Authenticate (browser-based login or SPN)
+2. Prompt for resource group handling (create new or use existing)
 3. Launch the **interactive wizard** to build maintenance schedules
-4. Create all policies, configs, dynamic scopes, and remediation tasks
-5. Print a summary
+4. Create all policies, configs, and dynamic scopes
+5. Export an identity report (`identity-rbac-report.csv`) for the identity team
+6. Print a summary
 
 ### Non-Interactive Mode (JSON Config)
 
@@ -147,26 +167,44 @@ For automation or repeatable deployments, provide a JSON config file:
 
 See [JSON Config File Schema](#json-config-file-schema) for the full format.
 
-### SPN Authentication
+### Authentication
 
-The script authenticates to Azure Government using a Service Principal:
+The script supports two authentication methods to Azure Government:
 
-```
-Connect-AzAccount -Environment AzureUSGovernment -ServicePrincipal
-```
+**Option 1 — Interactive User Login (recommended for manual runs):**
 
-**Required RBAC roles at the management group scope:**
-
-| Role | Purpose |
-|---|---|
-| `Contributor` | Create maintenance configs, register providers, manage resources |
-| `Resource Policy Contributor` | Create/manage policy assignments and remediation tasks |
-
-**To verify your SPN has the right roles:**
+The wizard prompts you to choose authentication method. For interactive login, a browser window opens for you to sign in. No SPN credentials needed.
 
 ```powershell
-# Check role assignments
+.\Configure-AzureUpdateManager.ps1
+# Select "Interactive user login (browser-based)" when prompted
+```
+
+**Option 2 — Service Principal (recommended for automation):**
+
+```powershell
+.\Configure-AzureUpdateManager.ps1 -TenantId "xxx" -AppId "yyy"
+# The script prompts for AppSecret securely
+```
+
+**Required RBAC roles at the management group scope (both methods):**
+
+| Role | Role Definition ID | Purpose |
+|---|---|---|
+| `Resource Policy Contributor` | `36243c78-bf99-498c-9df9-86d9f8d28608` | Create/manage policy assignments and remediation tasks |
+| `Scheduled Patching Contributor` | `cd08ab90-6b14-449c-ad9a-8f8e549482c6` | Create maintenance configs and dynamic scope assignments |
+
+> **Additional role if creating a new resource group:** `Contributor` on the target subscription (or a role with `Microsoft.Resources/subscriptions/resourceGroups/write`).
+
+**To verify your identity has the right roles:**
+
+```powershell
+# For SPN
 Get-AzRoleAssignment -ServicePrincipalName "your-app-id" `
+    -Scope "/providers/Microsoft.Management/managementGroups/YOUR-MG-NAME"
+
+# For user
+Get-AzRoleAssignment -SignInName "user@domain.com" `
     -Scope "/providers/Microsoft.Management/managementGroups/YOUR-MG-NAME"
 ```
 
@@ -324,14 +362,49 @@ Add another dynamic scope? [y/N]:
 | Tags | Key=Value resource tag pairs | `Environment=Production` |
 | Tag Operator | `Any` = match any filter; `All` = match all filters | Selection menu |
 
+### Identity Team RBAC Handoff
+
+After the script runs, it generates an **identity report** listing the system-assigned managed identities auto-created by Azure for DINE policy assignments. These identities require **Contributor** role to perform remediation.
+
+The report is:
+- **Displayed in the console** with assignment names, principal IDs, and required roles
+- **Exported to `identity-rbac-report.csv`** for the identity team
+
+**Sample CSV output:**
+
+| AssignmentName | DisplayName | PrincipalId | RequiredRole | RoleDefinitionId | Scope |
+|---|---|---|---|---|---|
+| assess-win | Periodic Assessment - Windows | abc123... | Contributor | b24988ac-... | /providers/Microsoft.Management/managementGroups/MyMG |
+
+**Why Contributor?** Microsoft hardcodes the Contributor role (`b24988ac-6180-42a0-ab88-20f7382dd24c`) in the `roleDefinitionIds` field of the DINE policy definitions. This cannot be changed to a lesser role.
+
+**What works before RBAC is assigned:**
+- ✅ Policy assignments are created and evaluating compliance
+- ✅ Maintenance configurations and dynamic scopes are active
+- ❌ Remediation tasks will fail with `AuthorizationFailed`
+
+**After RBAC is assigned:** RBAC propagation typically takes 5–10 minutes (up to 30 minutes). After propagation, re-run with `-RunRemediation` or trigger remediation from the portal.
+
+### Running Remediation
+
+Remediation is **skipped by default** because the managed identities need RBAC first. After the identity team assigns Contributor:
+
+```powershell
+# Re-run with remediation enabled
+.\Configure-AzureUpdateManager.ps1 -ConfigFile ".\my-config.json" -RunRemediation
+
+# Or trigger remediation from the Azure portal:
+# Policy → Assignments → select assignment → Create Remediation Task
+```
+
 ### Re-running the Script
 
 The script is **idempotent** — safe to re-run:
 
 - **Maintenance configs**: Checks if a config with the same name exists before creating
 - **Policy assignments**: Checks if an assignment with the same name exists before creating
-- **Resource providers**: Checks registration state before re-registering
-- **Resource group**: Creates only if it doesn't exist
+- **Resource providers**: Checks registration state before re-registering (when `-RegisterProviders` is used)
+- **Resource group**: Validates existing RG or creates new (based on wizard/config choice)
 
 ---
 
@@ -342,11 +415,13 @@ The script is **idempotent** — safe to re-run:
 | `ManagementGroupName` | String | Yes* | Management group name for policy scope |
 | `SubscriptionId` | String | Yes* | Subscription ID for maintenance configs |
 | `ResourceGroupName` | String | Yes* | Resource group for maintenance configs |
-| `TenantId` | String | Yes* | Azure AD tenant ID |
-| `AppId` | String | Yes* | SPN Application (Client) ID |
-| `AppSecret` | SecureString | Yes* | SPN Client Secret |
+| `TenantId` | String | No* | Azure AD tenant ID (required for SPN, optional for user login) |
+| `AppId` | String | No* | SPN Application (Client) ID (omit for user login) |
+| `AppSecret` | SecureString | No* | SPN Client Secret (omit for user login) |
 | `Location` | String | Yes* | Azure Gov region (e.g., `usgovvirginia`) |
 | `ConfigFile` | String | No | Path to JSON config for non-interactive mode |
+| `RegisterProviders` | Switch | No | Enable resource provider registration across subscriptions |
+| `RunRemediation` | Switch | No | Trigger policy remediation tasks (requires managed identity RBAC) |
 
 *\*Prompted interactively if not supplied (unless using `-ConfigFile`)*
 
@@ -417,8 +492,11 @@ Full example for non-interactive mode:
   "ResourceGroupName": "rg-update-manager",
   "TenantId": "00000000-0000-0000-0000-000000000002",
   "AppId": "00000000-0000-0000-0000-000000000003",
-  "AppSecret": "your-client-secret-here",
+  "AppSecret": "<YOUR_CLIENT_SECRET>",
   "Location": "usgovvirginia",
+  "CreateResourceGroup": false,
+  "RegisterProviders": false,
+  "RunRemediation": false,
   "MaintenanceSchedules": [
     {
       "Name": "Patch-Windows-Weekly-Sat",
@@ -488,10 +566,13 @@ Full example for non-interactive mode:
 | `ManagementGroupName` | string | ✓ | Management group name |
 | `SubscriptionId` | string | ✓ | Subscription for maintenance configs |
 | `ResourceGroupName` | string | ✓ | Resource group for maintenance configs |
-| `TenantId` | string | ✓ | Azure AD tenant ID |
-| `AppId` | string | ✓ | SPN Application ID |
-| `AppSecret` | string | ✓ | SPN Client Secret |
+| `TenantId` | string | | Azure AD tenant ID (required for SPN auth) |
+| `AppId` | string | | SPN Application ID (omit for user login) |
+| `AppSecret` | string | | SPN Client Secret (omit for user login) |
 | `Location` | string | ✓ | Azure Gov region |
+| `CreateResourceGroup` | boolean | | `true` to create RG, `false` to use existing (default: `false`) |
+| `RegisterProviders` | boolean | | Enable resource provider registration (default: `false`) |
+| `RunRemediation` | boolean | | Trigger policy remediation tasks (default: `false`) |
 | `MaintenanceSchedules` | array | ✓ | Array of schedule objects |
 | `MaintenanceSchedules[].Name` | string | ✓ | Schedule name |
 | `MaintenanceSchedules[].MaintenanceScope` | string | | `InGuestPatch` (default, portal: "Guest"), `Host`, `OSImage`, or `Resource` |
@@ -527,25 +608,29 @@ The `examples/` folder contains ready-to-use JSON config files:
 ```powershell
 # Copy and edit the example
 Copy-Item .\examples\config-basic.json .\my-config.json
-# Edit my-config.json with your actual subscription IDs, SPN credentials, etc.
+# Edit my-config.json with your actual subscription IDs, etc.
 
-# Run the script
+# Run with interactive user login (no SPN fields needed in config)
 .\Configure-AzureUpdateManager.ps1 -ConfigFile .\my-config.json
+
+# Run with optional provider registration
+.\Configure-AzureUpdateManager.ps1 -ConfigFile .\my-config.json -RegisterProviders
 ```
 
 ### Interactive mode example
 
 ```powershell
-# Run with minimal parameters — the wizard handles the rest
+# Run with no parameters — the wizard handles everything
+.\Configure-AzureUpdateManager.ps1
+
+# Or provide parameters to skip some prompts
 .\Configure-AzureUpdateManager.ps1 `
-    -TenantId "your-tenant-id" `
-    -AppId "your-app-id" `
     -ManagementGroupName "Contoso-Gov" `
     -SubscriptionId "sub-for-configs" `
     -ResourceGroupName "rg-update-manager" `
     -Location "usgovvirginia"
 
-# The wizard will prompt you to build each maintenance schedule interactively
+# The wizard will prompt for auth method, RG handling, and maintenance schedules
 ```
 
 ---
@@ -557,9 +642,11 @@ Copy-Item .\examples\config-basic.json .\my-config.json
 | Error | Cause | Resolution |
 |---|---|---|
 | `Missing required modules` | Az modules not installed | Run `Install-Module -Name Az.Accounts,Az.Resources,Az.Maintenance,Az.PolicyInsights -Force` |
-| `AADSTS7000215: Invalid client secret` | Wrong or expired SPN secret | Regenerate the SPN secret in Azure AD |
-| `AuthorizationFailed` | SPN lacks required RBAC roles | Assign `Contributor` + `Resource Policy Contributor` at management group scope |
-| `ResourceProviderNotRegistered` | Provider not registered in subscription | The script handles this automatically; if it persists, manually register via portal |
+| `AADSTS7000215: Invalid client secret` | Wrong or expired SPN secret | Regenerate the SPN secret in Entra ID |
+| `AuthorizationFailed` on deployment | Deploying identity lacks RBAC | Assign `Resource Policy Contributor` + `Scheduled Patching Contributor` at management group scope |
+| `AuthorizationFailed` on remediation | Policy managed identities lack RBAC | Identity team must assign `Contributor` to managed identities (see `identity-rbac-report.csv`) |
+| `Resource group does not exist` | RG not found and `CreateResourceGroup` is false | Use an existing RG name or select "Create a new resource group" in the wizard |
+| `ResourceProviderNotRegistered` | Provider not registered in subscription | Use `-RegisterProviders` switch or manually register via portal |
 | `PolicyAssignmentNotFound` | Policy definition ID changed | The script uses well-known built-in IDs; verify they exist in Azure Gov |
 | `MaintenanceConfigurationAlreadyExists` | Config already created | The script is idempotent — it skips existing configs |
 | `InvalidMaintenanceScope` | Wrong scope parameter | Ensure `-MaintenanceScope InGuestPatch` is used |
