@@ -134,7 +134,6 @@ function Show-Banner {
     Write-Host ""
     Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
     Write-Host "║       Azure Update Manager — Greenfield Configuration       ║" -ForegroundColor Cyan
-    Write-Host "║                    Azure Government                         ║" -ForegroundColor Cyan
     Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
     Write-Host ""
 }
